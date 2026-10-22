@@ -140,8 +140,8 @@ async function loadHome(category = 'home') {
   const miruroRoutes = { home:'/spotlight', popular:'/popular?page=1&per_page=24', recent:'/recent?page=1&per_page=24' };
   try {
     let data;
-    try { data = await miruroApi(miruroRoutes[category] || miruroRoutes.home); }
-    catch (miruroError) { data = await api(routes[category] || routes.home); }
+    try { data = await api(routes[category] || routes.home); }
+    catch (apiError) { data = await miruroApi(miruroRoutes[category] || miruroRoutes.home); }
     state.items = extractList(data).map(normalize);
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
@@ -161,8 +161,8 @@ async function searchAnime(query) {
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
     let data;
-    try { data = await miruroApi('/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
-    catch (miruroError) { data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
+    try { data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
+    catch (apiError) { data = await miruroApi('/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
     state.items = extractList(data).map(normalize); renderGrid(state.items);
     setStatus(state.items.length ? `Found ${state.items.length} matching titles` : 'No matches yet. Try a different title.');
   } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your API URL and retry.'); }
@@ -194,8 +194,8 @@ async function openDetails(item) {
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
     let infoData;
-    try { infoData = await miruroApi('/info/' + encodeURIComponent(state.selected.id)); }
-    catch (miruroError) { infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id)); }
+    try { infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id)); }
+    catch (apiError) { infoData = await miruroApi('/info/' + encodeURIComponent(state.selected.id)); }
     const info = infoData?.Media || infoData?.results?.Media || infoData?.results || infoData?.data?.Media || infoData?.data || infoData?.anime || infoData;
     const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.id || info?.anilistId || state.selected.id };
     state.selected = normalize(mergedInfo);
@@ -205,9 +205,9 @@ async function openDetails(item) {
     }
     let providerData = null;
     try {
-      providerData = await miruroApi('/episodes/' + encodeURIComponent(state.selected.id));
+      providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id));
     } catch {
-      try { providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
+      try { providerData = await miruroApi('/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
     }
     state.episodes = makeEpisodes(info, providerData);
     renderEpisodes();
@@ -234,15 +234,15 @@ async function playEpisode(ep) {
   try {
     const id = encodeURIComponent(state.selected.id);
     let data;
-    if (ep.providerId && ep.providerId.startsWith('watch/')) {
+    try {
+      data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=' + encodeURIComponent(ep.audio || 'sub') + '&provider=' + encodeURIComponent(ep.providerName || 'kiwi'));
+    } catch (apiError) { data = null; }
+    if (!data && ep.providerId && ep.providerId.startsWith('watch/')) {
       try { data = await miruroApi('/' + ep.providerId); } catch { data = null; }
     }
     if (!data) {
-      try { data = await miruroApi('/watch/kiwi/' + id + '/sub/animepahe-' + encodeURIComponent(ep.number || 1)); }
-      catch {
-        try { data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=sub'); }
-        catch (kuhiError) { openMiruro(state.selected?.title || ''); throw new Error('Could not resolve a playable source. Opened Miruro search as a fallback.'); }
-      }
+      try { data = await miruroApi('/watch/kiwi/' + id + '/' + encodeURIComponent(ep.audio || 'sub') + '/animepahe-' + encodeURIComponent(ep.number || 1)); }
+      catch { openMiruro(state.selected?.title || ''); throw new Error('Could not resolve a playable source. Opened Miruro search as a fallback.'); }
     }
     const sources = data?.streams || data?.results?.streams || data?.data?.streams || [];
     const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
