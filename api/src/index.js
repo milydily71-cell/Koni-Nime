@@ -231,6 +231,28 @@ async function animeInfo(id) {
 }
 async function episodeData(id) {
   return cached('episodes:' + id, 120000, async () => {
+    // Prefer Aniweeb's unified episode list for AniList IDs. This gives the UI real
+    // episode availability instead of fabricating an episode count from metadata.
+    if (/^\\d+$/.test(String(id))) {
+      try {
+        const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(id));
+        const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
+        if (episodes.length) {
+          const normalized = (track) => episodes.filter(ep => ep?.[track] === true).map((ep, index) => ({
+            number: Number(ep.number || index + 1),
+            title: ep.title || 'Episode ' + Number(ep.number || index + 1),
+            id: 'aniweeb-' + id + '-' + Number(ep.number || index + 1)
+          })).filter(ep => ep.number > 0);
+          const sub = normalized('sub');
+          const dub = normalized('dub');
+          if (sub.length || dub.length) {
+            return { providers: { aniweeb: { episodes: { ...(sub.length ? { sub } : {}), ...(dub.length ? { dub } : {}) } } } };
+          }
+        }
+      } catch (error) {
+        console.warn('[koni-nime-api] Aniweeb episode list failed; trying existing providers:', error?.message || error);
+      }
+    }
     try {
       const data = await reanime('/episodes/' + encodeURIComponent(id));
       const episodes = Array.isArray(data) ? data : data?.episodes || data?.data || [];
@@ -277,7 +299,7 @@ async function resolveSource(id, episode, provider, category) {
 
 app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
-app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', '')], episodeSources: ['rean ime'.replace(' ', '')] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', ''), 'anilist'], episodeSources: ['aniweeb', 'rean ime'.replace(' ', '')], playback: ['aniweeb-embed'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
 
 async function sendCatalog(category, req, res) {
   const { page, perPage } = pageParams(req);
