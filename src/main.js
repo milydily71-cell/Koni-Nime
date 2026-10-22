@@ -2,6 +2,8 @@ import Hls from 'hls.js';
 import './styles.css';
 
 const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || 'https://koni-nime-api.onrender.com').trim().replace(/\/+$/, '');
+const MIRURO_API = 'https://mirurotvapi.vercel.app/api';
+const MIRURO_SITE = 'https://www.miruro.ru';
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
@@ -38,6 +40,7 @@ function extractList(data) {
     if (!node || typeof node !== 'object' || seen.has(node)) continue;
     seen.add(node);
     if (Array.isArray(node)) return node;
+    if (node.success === false) continue;
     for (const key of keys) {
       const value = node[key];
       if (Array.isArray(value)) return value;
@@ -45,6 +48,23 @@ function extractList(data) {
     }
   }
   return [];
+}
+async function miruroApi(path) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 18000);
+  try {
+    const response = await fetch(MIRURO_API + path, { signal: controller.signal, headers: { Accept: 'application/json' } });
+    if (!response.ok) throw new Error('Miruro API request failed (' + response.status + ').');
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Miruro catalog timed out.');
+    if (error instanceof TypeError) throw new Error('Miruro API is unreachable from this network.');
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+function openMiruro(title = '') {
+  const url = title ? MIRURO_SITE + '/search?query=' + encodeURIComponent(title) : MIRURO_SITE;
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 async function api(path, options = {}) {
   const base = apiBase();
@@ -117,8 +137,11 @@ async function loadHome(category = 'home') {
   setStatus('Finding your next favorite…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   const routes = { home:'/anime/spotlight', popular:'/anime/popular?page=1&per_page=24', recent:'/anime/recent?page=1&per_page=24' };
+  const miruroRoutes = { home:'/spotlight', popular:'/popular?page=1&per_page=24', recent:'/recent?page=1&per_page=24' };
   try {
-    const data = await api(routes[category] || routes.home);
+    let data;
+    try { data = await api(routes[category] || routes.home); }
+    catch (kuhiError) { data = await miruroApi(miruroRoutes[category] || miruroRoutes.home); }
     state.items = extractList(data).map(normalize);
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
@@ -126,7 +149,7 @@ async function loadHome(category = 'home') {
     $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><div class="detail-actions"><button class="outline-btn" id="retry-load">Try again</button><button class="glass-btn" id="open-miruro">Open Miruro ↗</button></div></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
-    $('#open-miruro')?.addEventListener('click', () => window.open('https://www.miruro.ru/', '_blank', 'noopener,noreferrer'));
+    $('#open-miruro')?.addEventListener('click', () => openMiruro());
     setStatus('Unable to connect to Kuhi API.');
   }
 }
@@ -137,42 +160,49 @@ async function searchAnime(query) {
   showView('search'); $('#catalog-title').textContent = 'Search results'; setStatus('Searching the catalog…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    const data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24');
+    let data;
+    try { data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
+    catch (kuhiError) { data = await miruroApi('/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
     state.items = extractList(data).map(normalize); renderGrid(state.items);
     setStatus(state.items.length ? `Found ${state.items.length} matching titles` : 'No matches yet. Try a different title.');
   } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your API URL and retry.'); }
 }
 function makeEpisodes(info, providerData = null) {
-  const total = Number(info?.episodes || info?.episodeCount || 0);
-  if (total > 0 && total <= 1000) return Array.from({length:total},(_,i)=>({number:i+1,title:'Episode '+(i+1)}));
   const found = [];
-  const providers = providerData?.providers || providerData?.data?.providers || {};
-  for (const provider of Object.values(providers)) {
+  const providers = providerData?.providers || providerData?.results?.providers || providerData?.data?.providers || {};
+  for (const [providerName, provider] of Object.entries(providers)) {
     const categories = provider?.episodes || {};
-    for (const category of Object.values(categories)) {
-      if (!Array.isArray(category)) continue;
+    for (const [categoryName, categoryValue] of Object.entries(categories)) {
+      const category = Array.isArray(categoryValue) ? categoryValue : [];
       for (const ep of category) {
         const number = Number(ep?.number || ep?.episode || 0);
-        if (number > 0 && !found.some(x=>x.number===number)) found.push({number,title:ep.title || 'Episode '+number});
+        if (number > 0 && !found.some(x=>x.number===number && x.providerId===ep.id)) found.push({number,title:ep.title || 'Episode '+number, providerId:ep.id || '', providerName, audio:categoryName});
       }
     }
   }
-  return found.sort((a,b)=>a.number-b.number);
+  if (found.length) return found.sort((a,b)=>a.number-b.number);
+  const total = Number(info?.episodes || info?.episodeCount || 0);
+  if (total > 0 && total <= 1000) return Array.from({length:total},(_,i)=>({number:i+1,title:'Episode '+(i+1)}));
+  return [];
 }
 async function openDetails(item) {
   if (!item) return;
   state.selected = normalize(item); showView('detail');
   $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button><button class="glass-btn" id="detail-miruro">Watch on Miruro ↗</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
   $('#detail-play').addEventListener('click', () => $('#episode-list').scrollIntoView({behavior:'smooth'}));
-  $('#detail-miruro').addEventListener('click', () => window.open('https://www.miruro.ru/', '_blank', 'noopener,noreferrer'));
+  $('#detail-miruro').addEventListener('click', () => openMiruro(state.selected?.title || ''));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
-    const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id));
-    const info = infoData?.Media || infoData?.data || infoData?.anime || infoData;
+    let infoData;
+    try { infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id)); }
+    catch (kuhiError) { infoData = await miruroApi('/info/' + encodeURIComponent(state.selected.id)); }
+    const info = infoData?.Media || infoData?.results || infoData?.data || infoData?.anime || infoData;
     state.selected = normalize({...state.selected.raw,...info,id:info?.id || state.selected.id});
     let providerData = null;
-    if (!Number(info?.episodes || 0)) {
-      try { providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
+    try {
+      providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id));
+    } catch {
+      try { providerData = await miruroApi('/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
     }
     state.episodes = makeEpisodes(info, providerData);
     renderEpisodes();
@@ -198,10 +228,18 @@ async function playEpisode(ep) {
   $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p>`;
   try {
     const id = encodeURIComponent(state.selected.id);
-    const data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=sub');
-    const sources = data?.streams || data?.data?.streams || [];
+    let data;
+    if (ep.providerId && ep.providerId.startsWith('watch/')) {
+      try { data = await miruroApi('/' + ep.providerId); }
+      catch { data = null; }
+    }
+    if (!data) {
+      try { data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=sub'); }
+      catch (kuhiError) { openMiruro(state.selected?.title || ''); throw new Error('Could not resolve a playable source. Opened Miruro search as a fallback.'); }
+    }
+    const sources = data?.streams || data?.results?.streams || data?.data?.streams || [];
     const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
-    if (!source) throw new Error('No playable stream was returned. Try another episode later.');
+    if (!source) { openMiruro(state.selected?.title || ''); throw new Error('No playable stream was returned. Opened Miruro search as a fallback.'); }
     const sourceType = String(source.type || '').toLowerCase();
     let sourceUrl = source.url;
     const referer = source.referer || source.headers?.Referer || source.headers?.referer || '';
