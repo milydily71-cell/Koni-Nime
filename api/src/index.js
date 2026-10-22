@@ -230,11 +230,16 @@ async function animeInfo(id, titleHint = '') {
     } catch (error) {
       console.warn('[koni-nime-api] ReAnime details failed; using AniList fallback:', error?.message || error);
     }
-    // The catalog fallback uses AniList numeric media IDs, so resolve those IDs directly.
-    if (!/^\d+$/.test(String(id))) throw new Error('AniList fallback requires a numeric AniList media ID.');
+    // AniList catalog entries have numeric IDs; provider entries may only have slugs.
+    let mediaId = /^\d+$/.test(String(id)) ? Number(id) : null;
+    if (!mediaId && titleHint) {
+      const match = await findAniListByTitle(titleHint);
+      if (match?.id) mediaId = Number(match.id);
+    }
+    if (!mediaId) throw new Error('Could not match this anime title to AniList.');
     const data = await anilist(
       'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }',
-      { id: Number(id) }
+      { id: mediaId }
     );
     const item = data?.Media;
     if (!item) return null;
@@ -242,10 +247,18 @@ async function animeInfo(id, titleHint = '') {
   });
 }
 async function episodeData(id, titleHint = '') {
-  return cached('episodes:' + id, 120000, async () => {
-    // Prefer Aniweeb's unified episode list for AniList IDs. This gives the UI real
-    // episode availability instead of fabricating an episode count from metadata.
-    if (/^\d+$/.test(String(id))) {
+  return cached('episodes:' + id + ':' + String(titleHint || '').toLowerCase(), 120000, async () => {
+    // Resolve provider slugs to AniList IDs when a title is available.
+    let mediaId = /^\d+$/.test(String(id)) ? String(id) : '';
+    if (!mediaId && titleHint) {
+      try {
+        const match = await findAniListByTitle(titleHint);
+        if (match?.id) mediaId = String(match.id);
+      } catch (error) {
+        console.warn('[koni-nime-api] AniList title match failed:', error?.message || error);
+      }
+    }
+    // Prefer Aniweeb's episode list after resolving a numeric AniList ID.
       try {
         const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(mediaId));
         const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
@@ -280,10 +293,10 @@ async function episodeData(id, titleHint = '') {
     }
     // AniList supplies episode counts, not playable episode streams. This fallback keeps
     // the episode list available while making no claim that playback sources are resolved.
-    if (!/^\d+$/.test(String(id))) throw new Error('AniList episode fallback requires a numeric AniList media ID.');
+    if (!mediaId) throw new Error('Could not match this anime title to AniList to retrieve its episode count.');
     const data = await anilist(
       'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id episodes title { userPreferred romaji english } } }',
-      { id: Number(id) }
+      { id: Number(mediaId) }
     );
     const item = data?.Media;
     const count = Math.max(0, Math.min(2000, Number(item?.episodes) || 0));
