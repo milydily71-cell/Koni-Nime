@@ -1,10 +1,10 @@
 import Hls from 'hls.js';
 import './styles.css';
 
-const DEFAULT_API = 'https://api.tatakai.me';
+const DEFAULT_API = '';
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
-const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null, busy: false };
+const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const library = () => read('koni-library', []);
@@ -12,36 +12,49 @@ const history = () => read('koni-history', []);
 const apiBase = () => ($('#api-base')?.value || read('koni-api-base', DEFAULT_API)).trim().replace(/\/+$/, '');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pick = (obj, keys, fallback = '') => { for (const k of keys) if (obj?.[k] != null && obj[k] !== '') return obj[k]; return fallback; };
-const normalize = item => ({
-  id: String(pick(item, ['id','animeId','slug','mal_id','url'], pick(item, ['title','name'], 'unknown'))),
-  title: pick(item, ['title','name','englishTitle','japaneseTitle'], 'Untitled anime'),
-  image: pick(item, ['poster','image','cover','coverImage','thumbnail','img','posterUrl'], ''),
-  description: pick(item, ['description','synopsis','overview'], 'No synopsis is available for this title yet.'),
-  type: pick(item, ['type','format'], 'ANIME'),
-  status: pick(item, ['status','airingStatus'], ''),
-  score: pick(item, ['rating','score','averageScore'], ''),
-  genres: Array.isArray(item?.genres) ? item.genres.map(g => typeof g === 'string' ? g : g.name).filter(Boolean) : [],
-  raw: item
-});
-async function api(path, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 14000);
-  try {
-    const response = await fetch(apiBase() + path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
-    if (!response.ok) throw new Error(response.status === 429 ? 'The catalog is busy. Please wait a moment and try again.' : `Catalog request failed (${response.status}).`);
-    return await response.json();
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('The catalog took too long to respond. Please try again.');
-    throw error;
-  } finally { clearTimeout(timer); }
+const titleOf = item => typeof item?.title === 'string' ? item.title : pick(item?.title, ['english','userPreferred','romaji','native'], pick(item, ['name'], 'Untitled anime'));
+const imageOf = item => pick(item?.coverImage, ['extraLarge','large'], pick(item, ['poster','image','cover','thumbnail','posterUrl'], ''));
+function normalize(item = {}) {
+  return {
+    id: String(pick(item, ['id','anilistId','animeId','slug','mal_id'], 'unknown')),
+    title: titleOf(item),
+    image: imageOf(item),
+    banner: pick(item, ['bannerImage'], ''),
+    description: pick(item, ['description','synopsis','overview'], 'No synopsis is available for this title yet.'),
+    type: pick(item, ['format','type'], 'ANIME'),
+    status: pick(item, ['status','airingStatus'], ''),
+    score: pick(item, ['averageScore','meanScore','rating','score'], ''),
+    genres: Array.isArray(item?.genres) ? item.genres.map(g => typeof g === 'string' ? g : g?.name).filter(Boolean) : [],
+    raw: item
+  };
 }
 function extractList(data) {
   if (Array.isArray(data)) return data;
-  for (const key of ['results','animes','anime','data','trending','popular','latest','episodes']) {
+  for (const key of ['results','suggestions','media','animes','anime','trending','popular','latest','episodes']) {
     if (Array.isArray(data?.[key])) return data[key];
     if (Array.isArray(data?.data?.[key])) return data.data[key];
+    if (Array.isArray(data?.Page?.[key])) return data.Page[key];
   }
   return [];
+}
+async function api(path, options = {}) {
+  const base = apiBase();
+  if (!base) throw new Error('Set your deployed Kuhi API URL in Settings first. The GitHub repository is API source code, not a public server URL.');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(base + path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
+    if (!response.ok) {
+      let detail = '';
+      try { const body = await response.json(); detail = body.detail || body.message || ''; } catch {}
+      throw new Error(response.status === 429 ? 'The catalog is busy. Please wait a moment and try again.' : `Kuhi API request failed (${response.status})${detail ? ': '+detail : '.'}`);
+    }
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('The catalog took too long to respond. Please try again.');
+    if (error instanceof TypeError) throw new Error('Could not reach your Kuhi API server. Check the URL, server status, and CORS settings.');
+    throw error;
+  } finally { clearTimeout(timer); }
 }
 function toast(message) { const el = $('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toast.timer); toast.timer = setTimeout(() => el.classList.remove('show'), 3000); }
 function setStatus(message) { $('#status-line').textContent = message; }
@@ -59,31 +72,27 @@ function card(item, index = 0) {
   const safeImage = a.image && /^https?:\/\//i.test(a.image) ? a.image : '';
   const saved = library().some(x => normalize(x).id === a.id);
   return `<button class="anime-card" data-anime-index="${index}" aria-label="View ${esc(a.title)}">
-    <span class="poster-wrap">${safeImage ? `<img loading="lazy" src="${esc(safeImage)}" alt="" onerror="this.style.display='none'">` : ''}<span class="poster-placeholder">✦</span><span class="poster-overlay"></span><span class="card-score">${a.score ? '★ ' + esc(a.score) : 'KONI PICK'}</span><span class="quick-save ${saved?'saved':''}" data-save-id="${esc(a.id)}" aria-label="Save to library">${saved?'♥':'♡'}</span></span>
+    <span class="poster-wrap">${safeImage ? `<img loading="lazy" src="${esc(safeImage)}" alt="" onerror="this.style.display='none'">` : ''}<span class="poster-placeholder">✦</span><span class="poster-overlay"></span><span class="card-score">${a.score ? '★ ' + esc(Number(a.score) > 10 ? (Number(a.score)/10).toFixed(1) : a.score) : 'KONI PICK'}</span><span class="quick-save ${saved?'saved':''}" data-save-id="${esc(a.id)}" aria-label="Save to library">${saved?'♥':'♡'}</span></span>
     <span class="card-title">${esc(a.title)}</span><span class="card-meta">${esc(a.type)}${a.status ? ' · '+esc(a.status) : ''}</span>
   </button>`;
 }
 function renderGrid(items = state.items) {
   const grid = $('#anime-grid');
   grid.innerHTML = items.length ? items.map((item, i) => card(item, i)).join('') : '<div class="empty-state"><span>✦</span><h3>No titles found</h3><p>Try another search or check back later.</p></div>';
-  $$('.anime-card', grid).forEach((el, i) => el.addEventListener('click', e => {
-    if (e.target.closest('[data-save-id]')) return;
-    openDetails(items[i]);
-  }));
+  $$('.anime-card', grid).forEach((el, i) => el.addEventListener('click', e => { if (e.target.closest('[data-save-id]')) return; openDetails(items[i]); }));
   $$('[data-save-id]', grid).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); toggleSave(items.find(x => normalize(x).id === el.dataset.saveId)); renderGrid(items); }));
 }
 async function loadHome(category = 'home') {
   state.category = category;
-  $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest episodes',library:'Your saved anime'})[category] || 'Discover anime';
+  $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest anime'})[category] || 'Discover anime';
   $$('.chip').forEach(c => c.classList.toggle('active', c.dataset.category === category));
   if (category === 'library') { renderLibrary(); return; }
   setStatus('Finding your next favorite…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
-  const routes = { home:'/api/v1/hianime/home', popular:'/api/v1/hianime/home', recent:'/api/v1/hianime/home' };
+  const routes = { home:'/anime/spotlight', popular:'/anime/popular?page=1&per_page=24', recent:'/anime/recent?page=1&per_page=24' };
   try {
     const data = await api(routes[category] || routes.home);
-    let items = extractList(data);
-    if (category === 'recent') items = items.filter(x => /episode|latest/i.test(JSON.stringify(x).slice(0,300)));
+    const items = extractList(data);
     state.items = items.map(normalize);
     renderGrid(state.items);
     setStatus(items.length ? `${items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
@@ -91,7 +100,7 @@ async function loadHome(category = 'home') {
     $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><button class="outline-btn" id="retry-load">Try again</button></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
-    setStatus('Unable to connect to the upstream catalog.');
+    setStatus('Unable to connect to Kuhi API.');
   }
 }
 let searchTimer;
@@ -101,49 +110,83 @@ async function searchAnime(query) {
   showView('search'); $('#catalog-title').textContent = 'Search results'; setStatus('Searching the catalog…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    const data = await api('/api/v1/hianime/search?q=' + encodeURIComponent(state.query) + '&page=1');
+    const data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24');
     state.items = extractList(data).map(normalize); renderGrid(state.items);
     setStatus(state.items.length ? `Found ${state.items.length} matching titles` : 'No matches yet. Try a different title.');
-  } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your connection and retry.'); }
+  } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your API URL and retry.'); }
+}
+function makeEpisodes(info, providerData = null) {
+  const total = Number(info?.episodes || info?.episodeCount || 0);
+  if (total > 0 && total <= 1000) return Array.from({length:total},(_,i)=>({number:i+1,title:'Episode '+(i+1)}));
+  const found = [];
+  const providers = providerData?.providers || providerData?.data?.providers || {};
+  for (const provider of Object.values(providers)) {
+    const categories = provider?.episodes || {};
+    for (const category of Object.values(categories)) {
+      if (!Array.isArray(category)) continue;
+      for (const ep of category) {
+        const number = Number(ep?.number || ep?.episode || 0);
+        if (number > 0 && !found.some(x=>x.number===number)) found.push({number,title:ep.title || 'Episode '+number});
+      }
+    }
+  }
+  return found.sort((a,b)=>a.number-b.number);
 }
 async function openDetails(item) {
   if (!item) return;
   state.selected = normalize(item); showView('detail');
-  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading episode guide…</div></div>`;
+  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
   $('#detail-play').addEventListener('click', () => $('#episode-list').scrollIntoView({behavior:'smooth'}));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
-    const data = await api('/api/v1/hianime/info/' + encodeURIComponent(state.selected.id));
-    const info = data?.data || data?.anime || data;
-    state.selected = normalize({ ...state.selected.raw, ...info, id: pick(info,['id','animeId'],state.selected.id) });
-    state.episodes = extractList(info?.episodes ? {episodes:info.episodes} : data?.episodes ? {episodes:data.episodes} : data).filter(x => x && (x.episodeId || x.id || x.number || x.title));
+    const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id));
+    const info = infoData?.Media || infoData?.data || infoData?.anime || infoData;
+    state.selected = normalize({...state.selected.raw,...info,id:info?.id || state.selected.id});
+    let providerData = null;
+    if (!Number(info?.episodes || 0)) {
+      try { providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
+    }
+    state.episodes = makeEpisodes(info, providerData);
     renderEpisodes();
-  } catch (e) { $('#episode-list').innerHTML = `<p class="muted">Episode list unavailable right now. ${esc(e.message)}</p><button class="outline-btn" id="retry-info">Retry</button>`; $('#retry-info')?.addEventListener('click',()=>openDetails(state.selected.raw||state.selected)); }
+    $('#detail-content .detail-copy h1').textContent = state.selected.title;
+    $('#detail-content .synopsis p').textContent = state.selected.description || 'No synopsis is available for this title yet.';
+    $('#detail-content .genre-tags').innerHTML = state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('');
+  } catch (e) {
+    $('#episode-list').innerHTML = `<p class="muted">Anime details unavailable. ${esc(e.message)}</p><button class="outline-btn" id="retry-info">Retry</button>`;
+    $('#retry-info')?.addEventListener('click',()=>openDetails(state.selected.raw||state.selected));
+  }
 }
 function renderEpisodes() {
   const el = $('#episode-list');
-  if (!state.episodes.length) { el.innerHTML = '<p class="muted">No episodes were returned by this source.</p>'; return; }
-  el.innerHTML = state.episodes.map((ep,i)=>`<button class="episode-row" data-episode="${i}"><span class="episode-play">▶</span><span class="episode-text"><strong>${esc(pick(ep,['title','name'], 'Episode '+pick(ep,['number','episodeNumber'],i+1)))}</strong><small>Episode ${esc(pick(ep,['number','episodeNumber'],i+1))}</small></span><span class="episode-arrow">↗</span></button>`).join('');
+  if (!state.episodes.length) { el.innerHTML = '<p class="muted">No episode count was returned by the API.</p>'; return; }
+  el.innerHTML = state.episodes.map((ep,i)=>`<button class="episode-row" data-episode="${i}"><span class="episode-play">▶</span><span class="episode-text"><strong>${esc(ep.title || 'Episode '+ep.number)}</strong><small>Episode ${esc(ep.number)}</small></span><span class="episode-arrow">↗</span></button>`).join('');
   $$('[data-episode]',el).forEach(btn=>btn.addEventListener('click',()=>playEpisode(state.episodes[Number(btn.dataset.episode)])));
 }
 async function playEpisode(ep) {
   if (!ep) return;
   state.activeEpisode = ep; showView('player');
-  const video = $('#video-player'); $('#video-empty').hidden = false; $('#video-empty').textContent = 'Resolving available sources…';
-  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(pick(ep,['title','name'],'Episode '+pick(ep,['number','episodeNumber'],'')))}</p>`;
+  const video = $('#video-player'); video.pause(); video.removeAttribute('src'); video.load();
+  $('#video-empty').hidden = false; $('#video-empty').textContent = 'Resolving available sources…';
+  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p>`;
   try {
-    const id = pick(ep,['episodeId','id','animeEpisodeId','url']);
-    const data = await api('/api/v1/hianime/episode/sources?animeEpisodeId=' + encodeURIComponent(id));
-    const sources = data?.sources || data?.data?.sources || data?.links || [];
-    const source = sources.find(s => s.url && (s.isM3U8 || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url);
-    if (!source) throw new Error('No playable source was returned for this episode.');
+    const id = encodeURIComponent(state.selected.id);
+    const data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=sub');
+    const sources = data?.streams || data?.data?.streams || [];
+    const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
+    if (!source) throw new Error('No playable stream was returned. Try another episode later.');
+    let sourceUrl = source.url;
+    if (/\.m3u8(?:\?|$)/i.test(sourceUrl) && source.referer) {
+      sourceUrl = apiBase() + '/proxy_m3u8?url=' + encodeURIComponent(sourceUrl) + '&referer=' + encodeURIComponent(source.referer);
+    }
     $('#video-empty').hidden = true;
     if (state.hls) { state.hls.destroy(); state.hls = null; }
-    if (source.isM3U8 || /\.m3u8(?:\?|$)/i.test(source.url)) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = source.url;
-      else if (Hls.isSupported()) { state.hls = new Hls(); state.hls.loadSource(source.url); state.hls.attachMedia(video); }
+    if (String(source.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(sourceUrl)) {
+      if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = sourceUrl;
+      else if (Hls.isSupported()) { state.hls = new Hls(); state.hls.loadSource(sourceUrl); state.hls.attachMedia(video); }
       else throw new Error('This device cannot play this HLS stream.');
-    } else video.src = source.url;
+    } else if (String(source.type).toLowerCase()==='embed') {
+      throw new Error('This source is an embed and cannot play directly in the video player.');
+    } else video.src = sourceUrl;
     write('koni-history', [{ anime: state.selected, episode: ep, watchedAt: Date.now() }, ...history().filter(x=>normalize(x.anime).id!==state.selected.id)].slice(0,20));
     video.play().catch(()=>toast('Tap play when you are ready.'));
   } catch (e) { $('#video-empty').hidden = false; $('#video-empty').textContent = e.message; toast('Playback could not start.'); }
@@ -173,14 +216,21 @@ function bindEvents() {
   $('#open-library').onclick = renderLibrary;
   $('#explore-btn').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#surprise-btn').onclick = () => { if(state.items.length) openDetails(state.items[Math.floor(Math.random()*state.items.length)]); else loadHome('home'); };
-  $('#see-all').onclick = () => { $('#trending-section').scrollIntoView({behavior:'smooth'}); };
+  $('#see-all').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#search-input').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer=setTimeout(()=>searchAnime(e.target.value),350); });
   $('#clear-search').onclick = () => { $('#search-input').value=''; loadHome('home'); };
   $$('.chip').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
   $$('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='settings')$('#settings-dialog').showModal();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
   $('#back-catalog').onclick = () => { showView(state.query?'search':'home'); };
   $('#back-detail').onclick = () => openDetails(state.selected);
-  $('#save-settings').onclick = () => { write('koni-api-base',apiBase()); document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked); $('#settings-dialog').close(); toast('Preferences saved'); loadHome('home'); };
+  $('#save-settings').onclick = () => {
+    write('koni-api-base',apiBase());
+    write('koni-reduce-motion',$('#reduce-motion').checked);
+    document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked);
+    $('#settings-dialog').close();
+    toast('Preferences saved');
+    loadHome('home');
+  };
 }
 function init() {
   $('#api-base').value = read('koni-api-base',DEFAULT_API);
