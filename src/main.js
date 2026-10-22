@@ -133,7 +133,7 @@ async function loadHome(category = 'home') {
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
     $('#open-reanime')?.addEventListener('click', () => openReAnime());
-    setStatus('Unable to connect to Kuhi API.');
+    setStatus('Unable to connect to Koni-Nime API.');
   }
 }
 let searchTimer;
