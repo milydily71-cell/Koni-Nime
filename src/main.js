@@ -121,7 +121,7 @@ async function loadHome(category = 'home') {
   searchRequestId++;
   state.category = category;
   $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest anime'})[category] || 'Discover anime';
-  $$( '.chip' ).forEach(c => c.classList.toggle('active', c.dataset.category === category));
+  $$$( '.chip' ).forEach(c => c.classList.toggle('active', c.dataset.category === category));
   if (category === 'library') { renderLibrary(); return; }
   setStatus('Finding your next favorite…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
@@ -257,7 +257,7 @@ function renderAccount() {
   $('#account-stats').innerHTML = '<div><strong>'+library().length+'</strong><span>My list</span></div><div><strong>'+history().length+'</strong><span>In progress</span></div><div><strong>'+read('koni-downloads',[]).length+'</strong><span>Downloads</span></div>';
   const items = history();
   $('#account-history').innerHTML = items.length ? items.slice(0,8).map((x,i)=>card(x.anime,i)).join('') : '<p class="muted">Start watching an anime and your progress will show here.</p>';
-  $('.anime-card','#account-history').forEach((el,i)=>el.addEventListener('click',()=>openDetails(items[i].anime)));
+  $$('.anime-card','#account-history').forEach((el,i)=>el.addEventListener('click',()=>openDetails(items[i].anime)));
 }
 function renderLibrary() {
   showView('library');
@@ -284,9 +284,9 @@ function bindEvents() {
   $('#see-all').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#search-input').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer=setTimeout(()=>searchAnime(e.target.value),350); });
   $('#clear-search').onclick = () => { $('#search-input').value=''; loadHome('home'); };
-  $( '.chip' ).forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
-  $( '.genre-chip' ).forEach(el=>el.addEventListener('click',()=>{ $( '.genre-chip' ).forEach(ch=>ch.classList.toggle('active',ch===el)); $('#search-input').value=el.dataset.genre; searchAnime(el.dataset.genre); }));
-  $( '[data-nav]' ).forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='account')renderAccount();else if(nav==='downloads')renderDownloads();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
+  $$( '.chip' ).forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
+  $$( '.genre-chip' ).forEach(el=>el.addEventListener('click',()=>{ $$( '.genre-chip' ).forEach(ch=>ch.classList.toggle('active',ch===el)); $('#search-input').value=el.dataset.genre; searchAnime(el.dataset.genre); }));
+  $$( '[data-nav]' ).forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='account')renderAccount();else if(nav==='downloads')renderDownloads();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
   $('#back-catalog').onclick = () => { showView(state.query?'search':'home'); };
   $('#back-detail').onclick = () => openDetails(state.selected);
   $('#save-settings').onclick = () => {
