@@ -77,6 +77,8 @@ function showView(view) {
   $('#trending-section').hidden = !['home','search'].includes(view);
   $('#detail-section').hidden = view !== 'detail';
   $('#library-section').hidden = view !== 'library';
+  $('#downloads-section').hidden = view !== 'downloads';
+  $('#account-section').hidden = view !== 'account';
   $('#player-section').hidden = view !== 'player';
   $('#search-panel').hidden = view !== 'search';
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.nav === view || (view === 'detail' && el.dataset.nav === 'home')));
@@ -209,7 +211,8 @@ async function playEpisode(ep) {
   video.hidden = true;
   embed.hidden = true; embed.removeAttribute('src');
   $('#video-empty').hidden = false; $('#video-empty').textContent = 'Loading available episode player…';
-  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p><p class="muted">Playback by Aniweeb</p>`;
+  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p><div class="player-actions"><p class="muted">Playback by Aniweeb</p><button class="glass-btn" id="download-episode" type="button">⇩ Save offline</button></div>`;
+  $('#download-episode')?.addEventListener('click', () => { toast('Offline download is not available for this embedded stream. Use a provider-authorized download option if offered.'); });
   try {
     const id = String(state.selected?.id || '');
     if (!/^\d+$/.test(id)) throw new Error('Aniweeb requires an AniList ID. This title is currently identified by a provider slug, so it cannot be matched safely yet.');
@@ -232,6 +235,26 @@ function toggleSave(item) {
   write('koni-library', exists ? list.filter(x=>normalize(x).id!==a.id) : [item,...list]);
   toast(exists ? 'Removed from My list' : 'Added to My list');
 }
+function renderDownloads() {
+  showView('downloads');
+  const items = read('koni-downloads', []);
+  $('#downloads-content').innerHTML = items.length
+    ? '<div class="download-list">'+items.map(item=>'<div class="download-item"><span class="download-icon">⇩</span><div><strong>'+esc(item.title)+'</strong><small>'+esc(item.detail || 'Saved for offline')+'</small></div><span class="download-state">Ready</span></div>').join('')+'</div>'
+    : '<div class="empty-state download-empty"><span>⇩</span><h3>Your offline shelf</h3><p>Downloads appear here when a licensed provider supplies a direct downloadable file. This player currently uses an embedded stream, so it cannot safely save that video as a local file.</p><button class="outline-btn" id="downloads-explore">Explore anime</button></div>';
+  $('#downloads-explore')?.addEventListener('click',()=>{showView('home');loadHome('home')});
+}
+function renderAccount() {
+  showView('account');
+  const profile = read('koni-profile', {name:'Anime fan',email:''});
+  $('#account-name').textContent = profile.name || 'Anime fan';
+  $('#account-email').textContent = profile.email || 'Your personal anime space';
+  $('#account-avatar').textContent = (profile.name || 'U').trim().charAt(0).toUpperCase();
+  $('#open-account').textContent = (profile.name || 'U').trim().charAt(0).toUpperCase();
+  $('#account-stats').innerHTML = '<div><strong>'+library().length+'</strong><span>My list</span></div><div><strong>'+history().length+'</strong><span>In progress</span></div><div><strong>'+read('koni-downloads',[]).length+'</strong><span>Downloads</span></div>';
+  const items = history();
+  $('#account-history').innerHTML = items.length ? items.slice(0,8).map((x,i)=>card(x.anime,i)).join('') : '<p class="muted">Start watching an anime and your progress will show here.</p>';
+  $('.anime-card','#account-history').forEach((el,i)=>el.addEventListener('click',()=>openDetails(items[i].anime)));
+}
 function renderLibrary() {
   showView('library');
   const items = library();
@@ -248,19 +271,24 @@ function renderContinue() {
 }
 function bindEvents() {
   $('#open-search').onclick = () => { showView('search'); $('#search-input').focus(); };
-  $('#open-library').onclick = renderLibrary;
+  $('#open-account').onclick = renderAccount;
+  $('#edit-account').onclick = () => { const p=read('koni-profile',{name:'Anime fan',email:''}); $('#profile-name-input').value=p.name||''; $('#profile-email-input').value=p.email||''; $('#account-dialog').showModal(); };
+  $('#save-account').onclick = () => { const name=$('#profile-name-input').value.trim().slice(0,40)||'Anime fan'; const email=$('#profile-email-input').value.trim().slice(0,120); write('koni-profile',{name,email}); $('#account-dialog').close(); renderAccount(); toast('Profile saved on this device'); };
+  $('#account-settings').onclick = () => $('#settings-dialog').showModal();
   $('#explore-btn').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#surprise-btn').onclick = () => { if(state.items.length) openDetails(state.items[Math.floor(Math.random()*state.items.length)]); else loadHome('home'); };
   $('#see-all').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#search-input').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer=setTimeout(()=>searchAnime(e.target.value),350); });
   $('#clear-search').onclick = () => { $('#search-input').value=''; loadHome('home'); };
   $$('.chip').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
-  $$('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='settings')$('#settings-dialog').showModal();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
+  $('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='account')renderAccount();else if(nav==='downloads')renderDownloads();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
   $('#back-catalog').onclick = () => { showView(state.query?'search':'home'); };
   $('#back-detail').onclick = () => openDetails(state.selected);
   $('#save-settings').onclick = () => {
-    write('koni-api-base',apiBase());
     write('koni-reduce-motion',$('#reduce-motion').checked);
+    write('koni-catalog-density',$('#catalog-density').value);
+    write('koni-preferred-audio',$('#preferred-audio').value);
+    document.documentElement.classList.toggle('compact-catalog',$('#catalog-density').value==='compact');
     document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked);
     $('#settings-dialog').close();
     toast('Preferences saved');
@@ -268,8 +296,10 @@ function bindEvents() {
   };
 }
 function init() {
-  $('#api-base').value = read('koni-api-base',DEFAULT_API) || DEFAULT_API;
   $('#reduce-motion').checked = read('koni-reduce-motion',false);
+  $('#catalog-density').value = read('koni-catalog-density','comfortable');
+  $('#preferred-audio').value = read('koni-preferred-audio','sub');
+  document.documentElement.classList.toggle('compact-catalog',$('#catalog-density').value==='compact');
   document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked);
   bindEvents(); renderContinue(); loadHome('home');
 }
