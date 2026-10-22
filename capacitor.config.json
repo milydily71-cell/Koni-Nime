@@ -1,0 +1,8 @@
+{
+  "appId": "app.koninime.mobile",
+  "appName": "Koni-Nime",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
