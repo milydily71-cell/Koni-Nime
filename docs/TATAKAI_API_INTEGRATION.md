@@ -1,25 +1,37 @@
-# Tatakai API integration notes
+# Tatakai API integration
 
-Koni-Nime can use the public Tatakai API as a data provider instead of maintaining a separate scraper. API documentation: https://api.tatakai.me/docs
+Koni-Nime's mobile-first UI uses the public Tatakai API as its anime catalog provider. Default base URL: `https://api.tatakai.me`. The API base can be changed in Settings.
 
-## Integration requirements
+## Routes currently wired in the client
 
-- Keep the API base URL configurable; default to `https://api.tatakai.me`.
-- Read the live API schema/OpenAPI documentation before wiring search, anime details, episodes, and stream resolution. Do not assume endpoint paths or response fields.
-- Normalize provider responses into app-owned models so the UI is independent of upstream response changes.
-- Handle loading, empty results, HTTP errors, timeouts, and upstream rate limits in the UI.
-- Use artwork URLs returned by the provider; provide a placeholder for missing posters.
-- Keep API attribution and the Tatakai API's license/disclaimer visible in project documentation.
-- Do not bundle secrets or private API keys in the APK.
-- Only surface streams the user is authorized to access; respect source-site terms and copyright.
+- Home catalog: `GET /api/v1/hianime/home`
+- Search: `GET /api/v1/hianime/search?q=<query>&page=1`
+- Anime details: `GET /api/v1/hianime/info/<anime-id>`
+- Episode sources: `GET /api/v1/hianime/episode/sources?animeEpisodeId=<episode-id>`
 
-## Suggested app experience
+These routes are based on the published Tatakai API examples and should be rechecked against the live Swagger docs when the upstream API changes: https://api.tatakai.me/docs. This environment could not independently validate live responses, so response parsing is defensive and upstream connectivity/schema still needs a real build/device test.
 
-- **Home:** cinematic featured anime banner, trending and latest-updates rails.
-- **Search:** debounced search, genre/status filters, poster grid, and clear empty/error states.
-- **Anime details:** backdrop, poster, title, synopsis, genres, status, and episode list.
-- **Player:** source/quality selection where available, loading/error recovery, episode navigation, and resume progress.
-- **Library:** locally saved watchlist and watch history, with privacy-friendly storage.
-- **Navigation:** compact bottom bar for Home, Search, Library, and Settings; dark charcoal surfaces with a violet/cyan accent palette.
+## Implemented UI
 
-This document is planning guidance, not a claim that these screens or API calls are already implemented. Endpoint paths and response models must be verified against the live API docs before implementation.
+- Cinematic dark charcoal/violet responsive layout with mobile bottom navigation
+- Home catalog cards, loading placeholders, empty/error states and retry
+- Search with debouncing
+- Anime details, synopsis/genre display, episode list
+- HLS playback via hls.js or native HLS, and direct media playback when a supported URL is returned
+- Device-local watchlist and recent-watch history
+- Settings for API base URL and reduced motion
+- Capacitor Android packaging and GitHub Actions release APK artifact
+
+## Build
+
+```sh
+npm install
+npm run build
+npx cap add android
+npx cap sync android
+cd android && ./gradlew assembleRelease
+```
+
+## Attribution, privacy and legal
+
+Tatakai is an independent upstream project and may have separate license and attribution requirements. Review the source repository's current license and API usage terms before redistribution. Koni-Nime does not host video files; source availability depends on third-party providers. Only stream content you are authorized to access. Watchlist and history are stored locally in the app's browser storage and are not synced to an account.
