@@ -2,8 +2,7 @@ import Hls from 'hls.js';
 import './styles.css';
 
 const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || 'https://koni-nime-api.onrender.com').trim().replace(/\/+$/, '');
-const MIRURO_API = 'https://mirurotvapi.vercel.app/api';
-const MIRURO_SITE = 'https://www.miruro.ru';
+const REANIME_SITE = 'https://reanime.to';
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
@@ -14,11 +13,11 @@ const history = () => read('koni-history', []);
 const apiBase = () => ($('#api-base')?.value || read('koni-api-base', DEFAULT_API) || DEFAULT_API).trim().replace(/\/+$/, '');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pick = (obj, keys, fallback = '') => { for (const k of keys) if (obj?.[k] != null && obj[k] !== '') return obj[k]; return fallback; };
-const titleOf = item => typeof item?.title === 'string' ? item.title : pick(item?.title, ['english','userPreferred','romaji','native'], pick(item, ['name'], 'Untitled anime'));
-const imageOf = item => pick(item?.coverImage, ['extraLarge','large'], pick(item, ['poster','image','cover','thumbnail','posterUrl'], ''));
+const titleOf = item => typeof item?.title === 'string' ? item.title : pick(item?.title, ['english','userPreferred','romaji','native'], pick(item, ['name','title_english','title_romaji'], 'Untitled anime'));
+const imageOf = item => pick(item?.coverImage, ['extraLarge','large'], pick(item, ['poster','image','cover','thumbnail','posterUrl'], pick(item?.cover_image, ['extra_large','large','medium'], '')));
 function normalize(item = {}) {
   return {
-    id: String(pick(item, ['id','anilistId','animeId','slug','mal_id'], 'unknown')),
+    id: String(pick(item, ['slug','id','anilistId','animeId','mal_id'], 'unknown')),
     title: titleOf(item),
     image: imageOf(item),
     banner: pick(item, ['bannerImage'], ''),
@@ -49,26 +48,13 @@ function extractList(data) {
   }
   return [];
 }
-async function miruroApi(path) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18000);
-  try {
-    const response = await fetch(MIRURO_API + path, { signal: controller.signal, headers: { Accept: 'application/json' } });
-    if (!response.ok) throw new Error('Miruro API request failed (' + response.status + ').');
-    return await response.json();
-  } catch (error) {
-    if (error.name === 'AbortError') throw new Error('Miruro catalog timed out.');
-    if (error instanceof TypeError) throw new Error('Miruro API is unreachable from this network.');
-    throw error;
-  } finally { clearTimeout(timer); }
-}
-function openMiruro(title = '') {
-  const url = title ? MIRURO_SITE + '/search?query=' + encodeURIComponent(title) : MIRURO_SITE;
+function openReAnime(title = '') {
+  const url = title ? REANIME_SITE + '/search?q=' + encodeURIComponent(title) : REANIME_SITE + '/home';
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 async function api(path, options = {}) {
   const base = apiBase();
-  if (!base) throw new Error('Kuhi API is not configured. Deploy the API service, or enter its public HTTPS URL in Settings.');
+  if (!base) throw new Error('Koni-Nime API is not configured. Deploy the API service, or enter its public HTTPS URL in Settings.');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 35000);
   try {
@@ -76,12 +62,12 @@ async function api(path, options = {}) {
     if (!response.ok) {
       let detail = '';
       try { const body = await response.json(); detail = body.detail || body.message || ''; } catch {}
-      throw new Error(response.status === 429 ? 'The catalog is busy. Please wait a moment and try again.' : `Kuhi API request failed (${response.status})${detail ? ': '+detail : '.'}`);
+      throw new Error(response.status === 429 ? 'The catalog is busy. Please wait a moment and try again.' : `Koni-Nime API request failed (${response.status})${detail ? ': '+detail : '.'}`);
     }
     return await response.json();
   } catch (error) {
     if (error.name === 'AbortError') throw new Error('The catalog took too long to respond. Please try again.');
-    if (error instanceof TypeError) throw new Error('Could not reach your Kuhi API server. Check the URL, server status, and CORS settings.');
+    if (error instanceof TypeError) throw new Error('Could not reach your Koni-Nime API server. Check the URL, server status, and CORS settings.');
     throw error;
   } finally { clearTimeout(timer); }
 }
@@ -137,19 +123,16 @@ async function loadHome(category = 'home') {
   setStatus('Finding your next favorite…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   const routes = { home:'/anime/spotlight', popular:'/anime/popular?page=1&per_page=24', recent:'/anime/recent?page=1&per_page=24' };
-  const miruroRoutes = { home:'/spotlight', popular:'/popular?page=1&per_page=24', recent:'/recent?page=1&per_page=24' };
-  try {
-    let data;
-    try { data = await api(routes[category] || routes.home); }
-    catch (apiError) { data = await miruroApi(miruroRoutes[category] || miruroRoutes.home); }
+    try {
+    const data = await api(routes[category] || routes.home);
     state.items = extractList(data).map(normalize);
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
   } catch (error) {
-    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><div class="detail-actions"><button class="outline-btn" id="retry-load">Try again</button><button class="glass-btn" id="open-miruro">Open Miruro ↗</button></div></div>';
+    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><div class="detail-actions"><button class="outline-btn" id="retry-load">Try again</button><button class="glass-btn" id="open-reanime">Open Re:Anime ↗</button></div></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
-    $('#open-miruro')?.addEventListener('click', () => openMiruro());
+    $('#open-reanime')?.addEventListener('click', () => openReAnime());
     setStatus('Unable to connect to Kuhi API.');
   }
 }
@@ -160,9 +143,7 @@ async function searchAnime(query) {
   showView('search'); $('#catalog-title').textContent = 'Search results'; setStatus('Searching the catalog…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
-    let data;
-    try { data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
-    catch (apiError) { data = await miruroApi('/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24'); }
+    const data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24');
     state.items = extractList(data).map(normalize); renderGrid(state.items);
     setStatus(state.items.length ? `Found ${state.items.length} matching titles` : 'No matches yet. Try a different title.');
   } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your API URL and retry.'); }
@@ -188,27 +169,20 @@ function makeEpisodes(info, providerData = null) {
 async function openDetails(item) {
   if (!item) return;
   state.selected = normalize(item); showView('detail');
-  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button><button class="glass-btn" id="detail-miruro">Watch on Miruro ↗</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
+  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button><button class="glass-btn" id="detail-reanime">Watch on Re:Anime ↗</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
   $('#detail-play').addEventListener('click', () => $('#episode-list').scrollIntoView({behavior:'smooth'}));
-  $('#detail-miruro').addEventListener('click', () => openMiruro(state.selected?.title || ''));
+  $('#detail-reanime').addEventListener('click', () => openReAnime(state.selected?.title || ''));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
-    let infoData;
-    try { infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id)); }
-    catch (apiError) { infoData = await miruroApi('/info/' + encodeURIComponent(state.selected.id)); }
+    const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id));
     const info = infoData?.Media || infoData?.results?.Media || infoData?.results || infoData?.data?.Media || infoData?.data || infoData?.anime || infoData;
-    const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.id || info?.anilistId || state.selected.id };
+    const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.slug || state.selected.id };
     state.selected = normalize(mergedInfo);
     if (!state.selected.description || state.selected.description === 'No synopsis is available for this title yet.') {
       const synopsis = info?.description || info?.synopsis || info?.overview || info?.description?.english;
       if (typeof synopsis === 'string' && synopsis.trim()) state.selected.description = synopsis;
     }
-    let providerData = null;
-    try {
-      providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id));
-    } catch {
-      try { providerData = await miruroApi('/episodes/' + encodeURIComponent(state.selected.id)); } catch {}
-    }
+    const providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id));
     state.episodes = makeEpisodes(info, providerData);
     renderEpisodes();
     $('#detail-content .detail-copy h1').textContent = state.selected.title;
@@ -233,20 +207,10 @@ async function playEpisode(ep) {
   $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p>`;
   try {
     const id = encodeURIComponent(state.selected.id);
-    let data;
-    try {
-      data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=' + encodeURIComponent(ep.audio || 'sub') + '&provider=' + encodeURIComponent(ep.providerName || 'kiwi'));
-    } catch (apiError) { data = null; }
-    if (!data && ep.providerId && ep.providerId.startsWith('watch/')) {
-      try { data = await miruroApi('/' + ep.providerId); } catch { data = null; }
-    }
-    if (!data) {
-      try { data = await miruroApi('/watch/kiwi/' + id + '/' + encodeURIComponent(ep.audio || 'sub') + '/animepahe-' + encodeURIComponent(ep.number || 1)); }
-      catch { openMiruro(state.selected?.title || ''); throw new Error('Could not resolve a playable source. Opened Miruro search as a fallback.'); }
-    }
+    const data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=' + encodeURIComponent(ep.audio || 'sub') + '&provider=' + encodeURIComponent(ep.providerName || 'HD-2'));
     const sources = data?.streams || data?.results?.streams || data?.data?.streams || [];
     const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
-    if (!source) { openMiruro(state.selected?.title || ''); throw new Error('No playable stream was returned. Opened Miruro search as a fallback.'); }
+    if (!source) { openReAnime(state.selected?.title || ''); throw new Error('No playable stream was returned. Opened Re:Anime as a fallback.'); }
     const sourceType = String(source.type || '').toLowerCase();
     let sourceUrl = source.url;
     const referer = source.referer || source.headers?.Referer || source.headers?.referer || '';
