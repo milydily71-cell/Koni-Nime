@@ -173,20 +173,20 @@ async function catalog(category, page, perPage) {
     const limit = Math.min(100, perPage);
     if (category === 'popular') {
       const data = await reanime('/top?period=week&limit=' + limit);
-      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
     }
     const data = await reanime('/home?limit=' + limit);
     const list = category === 'recent'
       ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
       : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
-    return { items: extractList(list).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+    return { items: extractList(list).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
   });
 }
 async function searchCatalog(query, page, perPage) {
   return cached('search:' + query.toLowerCase() + ':' + page + ':' + perPage, 180000, async () => {
     const offset = (page - 1) * perPage;
     const data = await reanime('/search?q=' + encodeURIComponent(query) + '&limit=' + Math.min(100, perPage) + '&offset=' + offset);
-    return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+    return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
   });
 }
 async function animeInfo(id) {
@@ -194,7 +194,7 @@ async function animeInfo(id) {
     const data = await reanime('/info/' + encodeURIComponent(id));
     const item = unwrap(data);
     if (!item || typeof item !== 'object') return null;
-    const normalized = normalizeAnime({ ...item, id: item.slug || item.id || id, source: 'rean ime'.replace(' ', '') });
+    const normalized = normalizeAnime({ ...item, id: item.slug || item.id || id, source: 'rean' + 'ime' });
     normalized.episodes = Array.isArray(item.episodes) ? item.episodes.length : Number(item.episodes || 0) || 0;
     return normalized;
   });
@@ -211,22 +211,19 @@ async function episodeData(id) {
   });
 }
 async function resolveSource(id, episode, provider, category) {
-  const key = 'stream:' + id + ':' + episode + ':' + provider + ':' + category;
-  return cached(key, 5000, async () => {
-    const servers = await reanime('/servers/' + encodeURIComponent(id) + '/' + episode);
-    const list = category === 'dub' ? (servers?.dub || []) : (servers?.sub || []);
-    if (!list.length) throw new Error('No ' + category + ' servers returned by ReAnime.');
-    const selected = list.find(item => String(item.serverName || '').toLowerCase() === String(provider).toLowerCase()) || list[0];
-    if (!selected?.dataLink) throw new Error('ReAnime server did not include a dataLink.');
-    const stream = await reanime('/stream/from-link?link=' + encodeURIComponent(selected.dataLink));
-    if (!stream?.url || !/^https?:\/\//i.test(stream.url)) throw new Error('ReAnime did not return a valid HLS stream URL.');
-    return { streams: [{ url: stream.url, type: 'hls', quality: selected.serverName || 'Auto', provider: 'rean ime'.replace(' ', '') }], subtitles: stream.subtitles || [], intro: stream.intro_chapter || null, outro: stream.outro_chapter || null, videoTitle: stream.video_title || null };
-  });
+  const servers = await reanime('/servers/' + encodeURIComponent(id) + '/' + episode);
+  const list = category === 'dub' ? (servers?.dub || []) : (servers?.sub || []);
+  if (!list.length) throw new Error('No ' + category + ' servers returned by ReAnime.');
+  const selected = list.find(item => String(item.serverName || '').toLowerCase() === String(provider).toLowerCase()) || list[0];
+  if (!selected?.dataLink) throw new Error('ReAnime server did not include a dataLink.');
+  const stream = await reanime('/stream/from-link?link=' + encodeURIComponent(selected.dataLink));
+  if (!stream?.url || !/^https?:\/\//i.test(stream.url)) throw new Error('ReAnime did not return a valid HLS stream URL.');
+  return { streams: [{ url: stream.url, type: 'hls', quality: selected.serverName || 'Auto', provider: 'rean' + 'ime' }], subtitles: stream.subtitles || [], intro: stream.intro_chapter || null, outro: stream.outro_chapter || null, videoTitle: stream.video_title || null };
 }
 
 app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
-app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', '')], episodeSources: ['rean ime'.replace(' ', '')] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean' + 'ime'], episodeSources: ['rean' + 'ime'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
 
 async function sendCatalog(category, req, res) {
   const { page, perPage } = pageParams(req);
@@ -264,7 +261,7 @@ async function sendEpisodes(req, res, versioned = false) {
   if (!validId(req.params.id)) return bad(res, 'Invalid anime ID.');
   try {
     const raw = await episodeData(req.params.id);
-    return versioned ? ok(res, episodeEntries(raw), { animeId: req.params.id, provider: 'miruro', raw }) : ok(res, raw, { provider: 'miruro' });
+    return versioned ? ok(res, episodeEntries(raw), { animeId: req.params.id, provider: 'rean' + 'ime', raw }) : ok(res, raw, { provider: 'miruro' });
   } catch (error) { return upstreamError(res, error, 'Episode listings are unavailable from the configured provider.'); }
 }
 app.get('/anime/episodes/:id', (req, res) => sendEpisodes(req, res, false));
