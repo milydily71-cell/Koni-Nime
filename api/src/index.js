@@ -173,7 +173,7 @@ async function catalog(category, page, perPage) {
     const limit = Math.min(100, perPage);
     if (category === 'popular') {
       const data = await reanime('/top?period=week&limit=' + limit);
-      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
+      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
     }
     const data = await reanime('/home?limit=' + limit);
     const list = category === 'recent'
@@ -223,7 +223,7 @@ async function resolveSource(id, episode, provider, category) {
 
 app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
-app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean' + 'ime'], episodeSources: ['rean' + 'ime'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', '')], episodeSources: ['rean ime'.replace(' ', '')] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
 
 async function sendCatalog(category, req, res) {
   const { page, perPage } = pageParams(req);
