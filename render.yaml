@@ -8,8 +8,9 @@ services:
     healthCheckPath: /
     autoDeploy: true
 
-staticSites:
-  - name: koni-nime
+  - type: web
+    name: koni-nime
+    runtime: static
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     autoDeploy: true
