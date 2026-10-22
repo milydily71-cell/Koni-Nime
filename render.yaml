@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: koni-nime-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/api.Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    autoDeploy: true
+
+staticSites:
+  - name: koni-nime
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    autoDeploy: true
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://koni-nime-api.onrender.com
