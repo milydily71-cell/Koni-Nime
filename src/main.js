@@ -67,6 +67,30 @@ function showView(view) {
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.nav === view || (view === 'detail' && el.dataset.nav === 'home')));
   window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches || read('koni-reduce-motion', false) ? 'auto' : 'smooth' });
 }
+function renderGrid(items) {
+  const grid = $('#anime-grid');
+  if (!grid) return;
+  if (!Array.isArray(items) || items.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><span>✦</span><h3>No anime to show yet</h3><p>Try another category or search for a title you love.</p><button class="outline-btn" id="grid-retry">Reload catalog</button></div>';
+    $('#grid-retry')?.addEventListener('click', () => loadHome(state.category || 'home'));
+    return;
+  }
+  grid.innerHTML = items.map((item, index) => card(item, index)).join('');
+  $('.anime-card', grid).forEach((el, index) => {
+    el.addEventListener('click', () => openDetails(items[index]));
+  });
+  $('.quick-save', grid).forEach((el, index) => {
+    el.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSave(items[index]?.raw || items[index]);
+      const saved = library().some(x => normalize(x).id === normalize(items[index]).id);
+      el.classList.toggle('saved', saved);
+      el.textContent = saved ? '♥' : '♡';
+      toast(saved ? 'Added to My list' : 'Removed from My list');
+    });
+  });
+}
 function card(item, index = 0) {
   const a = normalize(item);
   const safeImage = a.image && /^https?:\/\//i.test(a.image) ? a.image : '';
