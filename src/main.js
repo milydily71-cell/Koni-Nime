@@ -202,32 +202,29 @@ function renderEpisodes() {
 async function playEpisode(ep) {
   if (!ep) return;
   state.activeEpisode = ep; showView('player');
-  const video = $('#video-player'); video.pause(); video.removeAttribute('src'); video.load();
-  $('#video-empty').hidden = false; $('#video-empty').textContent = 'Resolving available sources…';
-  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p>`;
+  const video = $('#video-player');
+  const embed = $('#embed-player');
+  if (state.hls) { state.hls.destroy(); state.hls = null; }
+  video.pause(); video.removeAttribute('src'); video.load();
+  video.hidden = true;
+  embed.hidden = true; embed.removeAttribute('src');
+  $('#video-empty').hidden = false; $('#video-empty').textContent = 'Loading available episode player…';
+  $('#player-info').innerHTML = `<span class="kicker">NOW PLAYING</span><h2>${esc(state.selected?.title || 'Anime')}</h2><p class="muted">${esc(ep.title || 'Episode '+ep.number)}</p><p class="muted">Playback by Aniweeb</p>`;
   try {
-    const id = encodeURIComponent(state.selected.id);
-    const data = await api('/anime/extract/' + id + '?e=' + encodeURIComponent(ep.number || 1) + '&type=' + encodeURIComponent(ep.audio || 'sub') + '&provider=' + encodeURIComponent(ep.providerName || 'HD-2'));
-    const sources = data?.streams || data?.results?.streams || data?.data?.streams || [];
-    const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
-    if (!source) { openReAnime(state.selected?.title || ''); throw new Error('No playable stream was returned. Opened Re:Anime as a fallback.'); }
-    const sourceType = String(source.type || '').toLowerCase();
-    let sourceUrl = source.url;
-    const referer = source.referer || source.headers?.Referer || source.headers?.referer || '';
-    if (/\.m3u8(?:\?|$)/i.test(sourceUrl) && referer) {
-      sourceUrl = apiBase() + '/proxy_m3u8?url=' + encodeURIComponent(sourceUrl) + '&referer=' + encodeURIComponent(referer);
-    }
+    const id = String(state.selected?.id || '');
+    if (!/^\d+$/.test(id)) throw new Error('Aniweeb requires an AniList ID. This title is currently identified by a provider slug, so it cannot be matched safely yet.');
+    const episode = Number(ep.number || 1);
+    if (!Number.isInteger(episode) || episode < 1) throw new Error('Invalid episode number.');
+    const track = ep.audio === 'dub' ? 'dub' : 'sub';
+    embed.src = 'https://api.aniweeb.net/embed/ani/' + encodeURIComponent(id) + '/' + episode + '?track=' + track;
+    embed.hidden = false;
     $('#video-empty').hidden = true;
-    if (sourceType === 'hls' || /\.m3u8(?:\?|$)/i.test(sourceUrl)) {
-      if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = sourceUrl;
-      else if (Hls.isSupported()) { state.hls = new Hls(); state.hls.loadSource(sourceUrl); state.hls.attachMedia(video); }
-      else throw new Error('This device cannot play this HLS stream.');
-    } else if (sourceType === 'embed') {
-      throw new Error('This source is an embed and cannot play directly in the video player.');
-    } else video.src = sourceUrl;
     write('koni-history', [{ anime: state.selected, episode: ep, watchedAt: Date.now() }, ...history().filter(x=>normalize(x.anime).id!==state.selected.id)].slice(0,20));
-    video.play().catch(()=>toast('Tap play when you are ready.'));
-  } catch (e) { $('#video-empty').hidden = false; $('#video-empty').textContent = e.message; toast('Playback could not start.'); }
+  } catch (e) {
+    embed.removeAttribute('src'); embed.hidden = true;
+    $('#video-empty').hidden = false; $('#video-empty').textContent = e.message;
+    toast('Playback could not start.');
+  }
 }
 function toggleSave(item) {
   if (!item) return;
