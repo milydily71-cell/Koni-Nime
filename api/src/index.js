@@ -2,7 +2,7 @@ import express from 'express';
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8000;
-const MIRURO_BASE = (process.env.MIRURO_API_BASE || 'https://mirurotvapi.vercel.app/api').replace(/\/+$/, '');
+const REANIME_BASE = (process.env.REANIME_API_BASE || 'https://koni-nime-reanime.onrender.com').replace(/\/+$/, '');
 const ANILIST_URL = process.env.ANILIST_API_URL || 'https://graphql.anilist.co';
 const TIMEOUT_MS = Math.max(3000, Number(process.env.UPSTREAM_TIMEOUT_MS) || 12000);
 const RATE_WINDOW = Math.max(10000, Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000);
@@ -48,9 +48,9 @@ export function normalizeAnime(item = {}) {
   const clean = value => typeof value === 'string' ? value.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#039;|&#39;/g, "'").trim() : '';
   const first = (...values) => values.find(value => value !== undefined && value !== null && value !== '');
   return {
-    id: String(first(item.id, item.anilistId, item.anilist_id, item.mal_id, item.slug, '')),
+    id: String(first(item.slug, item.id, item.anilistId, item.anilist_id, item.mal_id, '')),
     title: first(typeof item.title === 'string' ? item.title : '', title.english, title.userPreferred, title.romaji, title.native, item.name, item.romajiTitle, 'Untitled anime'),
-    image: first(cover.extraLarge, cover.large, item.poster, item.image, item.cover, item.thumbnail, item.posterUrl, ''),
+    image: first(cover.extraLarge, cover.large, item.poster, item.image, item.cover, item.thumbnail, item.posterUrl, cover.extraLarge, cover.large, item.cover_image?.extra_large, item.cover_image?.large, ''),
     banner: first(item.bannerImage, item.banner, item.backdrop, ''),
     description: clean(typeof desc === 'string' ? desc : desc?.english || desc?.romaji || ''),
     type: first(item.format, item.type, 'ANIME'),
@@ -124,7 +124,7 @@ async function fetchJson(url, options = {}) {
     throw error;
   } finally { clearTimeout(timer); }
 }
-async function miruro(path) { return fetchJson(MIRURO_BASE + path); }
+async function reanime(path) { return fetchJson(REANIME_BASE + path); }
 async function anilist(query, variables) {
   const result = await fetchJson(ANILIST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }) });
   if (result.errors?.length) throw new Error(result.errors[0].message || 'AniList GraphQL error');
@@ -169,52 +169,64 @@ async function anilistCatalog(category, page, perPage) {
   return (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' }));
 }
 async function catalog(category, page, perPage) {
-  return cached('catalog:' + category + ':' + page + ':' + perPage, 300000, async () => {
-    try {
-      const endpoint = category === 'popular' ? '/popular' : category === 'recent' ? '/recent' : '/spotlight';
-      const data = await miruro(endpoint + '?page=' + page + '&per_page=' + perPage);
-      const list = extractList(data).map(item => normalizeAnime({ ...item, source: 'miruro' })).filter(item => item.id);
-      if (list.length) return { items: list, provider: 'miruro' };
-    } catch {}
-    return { items: await anilistCatalog(category, page, perPage), provider: 'anilist' };
+  return cached('catalog:' + category + ':' + page + ':' + perPage, 180000, async () => {
+    const limit = Math.min(100, perPage);
+    if (category === 'popular') {
+      const data = await reanime('/top?period=week&limit=' + limit);
+      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+    }
+    const data = await reanime('/home?limit=' + limit);
+    const list = category === 'recent'
+      ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
+      : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
+    return { items: extractList(list).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
   });
 }
 async function searchCatalog(query, page, perPage) {
-  return cached('search:' + query.toLowerCase() + ':' + page + ':' + perPage, 300000, async () => {
-    try {
-      const data = await miruro('/search?query=' + encodeURIComponent(query) + '&page=' + page + '&per_page=' + perPage);
-      const list = extractList(data).map(item => normalizeAnime({ ...item, source: 'miruro' })).filter(item => item.id);
-      if (list.length) return { items: list, provider: 'miruro' };
-    } catch {}
-    const queryText = 'query ($search: String, $page: Int, $perPage: Int) { Page(page: $page, perPage: $perPage) { media(type: ANIME, search: $search, sort: [SEARCH_MATCH], isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }';
-    const data = await anilist(queryText, { search: query, page, perPage });
-    return { items: (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' })), provider: 'anilist' };
+  return cached('search:' + query.toLowerCase() + ':' + page + ':' + perPage, 180000, async () => {
+    const offset = (page - 1) * perPage;
+    const data = await reanime('/search?q=' + encodeURIComponent(query) + '&limit=' + Math.min(100, perPage) + '&offset=' + offset);
+    return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean ime'.replace(' ', '') })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
   });
 }
 async function animeInfo(id) {
-  return cached('info:' + id, 1800000, async () => {
-    if (/^\d+$/.test(id)) {
-      const query = 'query ($id: Int) { Media(id: $id, type: ANIME) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }';
-      try {
-        const data = await anilist(query, { id: Number(id) });
-        if (data?.Media) return normalizeAnime({ ...data.Media, source: 'anilist' });
-      } catch {}
-    }
-    const data = await miruro('/info/' + encodeURIComponent(id));
+  return cached('info:' + id, 900000, async () => {
+    const data = await reanime('/info/' + encodeURIComponent(id));
     const item = unwrap(data);
     if (!item || typeof item !== 'object') return null;
-    return normalizeAnime({ ...item, source: 'miruro' });
+    const normalized = normalizeAnime({ ...item, id: item.slug || item.id || id, source: 'rean ime'.replace(' ', '') });
+    normalized.episodes = Array.isArray(item.episodes) ? item.episodes.length : Number(item.episodes || 0) || 0;
+    return normalized;
   });
 }
-async function episodeData(id) { return cached('episodes:' + id, 180000, () => miruro('/episodes/' + encodeURIComponent(id))); }
+async function episodeData(id) {
+  return cached('episodes:' + id, 120000, async () => {
+    const data = await reanime('/episodes/' + encodeURIComponent(id));
+    const episodes = Array.isArray(data) ? data : data?.episodes || data?.data || [];
+    return { providers: { reanime: { episodes: { sub: episodes.map((ep, index) => ({
+      number: Number(ep.number || ep.episode || ep.episode_number || index + 1),
+      title: ep.title || ep.name || 'Episode ' + Number(ep.number || ep.episode || index + 1),
+      id: String(ep.id || ep.slug || ep.number || index + 1)
+    })) } } } };
+  });
+}
 async function resolveSource(id, episode, provider, category) {
   const key = 'stream:' + id + ':' + episode + ':' + provider + ':' + category;
-  return cached(key, 60000, () => miruro('/watch/' + encodeURIComponent(provider) + '/' + encodeURIComponent(id) + '/' + encodeURIComponent(category) + '/animepahe-' + encodeURIComponent(episode)));
+  return cached(key, 5000, async () => {
+    const servers = await reanime('/servers/' + encodeURIComponent(id) + '/' + episode);
+    const list = category === 'dub' ? (servers?.dub || []) : (servers?.sub || []);
+    if (!list.length) throw new Error('No ' + category + ' servers returned by ReAnime.');
+    const selected = list.find(item => String(item.serverName || '').toLowerCase() === String(provider).toLowerCase()) || list[0];
+    if (!selected?.dataLink) throw new Error('ReAnime server did not include a dataLink.');
+    const stream = await reanime('/stream/from-link?link=' + encodeURIComponent(selected.dataLink));
+    if (!stream?.url || !/^https?:\/\//i.test(stream.url)) throw new Error('ReAnime did not return a valid HLS stream URL.');
+    return { streams: [{ url: stream.url, type: 'hls', quality: selected.serverName || 'Auto', provider: 'rean ime'.replace(' ', '') }], subtitles: stream.subtitles || [], intro: stream.intro_chapter || null, outro: stream.outro_chapter || null, videoTitle: stream.video_title || null };
+  });
 }
 
 app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
-app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['miruro', 'anilist'], episodeSources: ['miruro'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', '')], episodeSources: ['rean ime'.replace(' ', '')] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
 
 async function sendCatalog(category, req, res) {
   const { page, perPage } = pageParams(req);
@@ -268,7 +280,7 @@ async function sendStreams(req, res, animeId) {
   try {
     const data = await resolveSource(animeId, episode, provider, category);
     const streams = normalizeStreams(data);
-    return ok(res, { animeId, episode, category, provider, streams }, { streams });
+    return ok(res, { animeId, episode, category, provider, streams, subtitles: data.subtitles || [], intro: data.intro || null, outro: data.outro || null, videoTitle: data.videoTitle || null }, { streams });
   } catch (error) { return upstreamError(res, error, 'Playback sources could not be resolved for this episode.'); }
 }
 app.get('/anime/extract/:id', (req, res) => sendStreams(req, res, req.params.id));
