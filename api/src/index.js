@@ -245,7 +245,7 @@ async function episodeData(id, titleHint = '') {
   return cached('episodes:' + id, 120000, async () => {
     // Prefer Aniweeb's unified episode list for AniList IDs. This gives the UI real
     // episode availability instead of fabricating an episode count from metadata.
-    if (/^\\d+$/.test(String(id))) {
+    if (/^\d+$/.test(String(id))) {
       try {
         const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(mediaId));
         const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
