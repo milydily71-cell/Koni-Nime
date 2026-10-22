@@ -61,7 +61,7 @@ async function api(path, options = {}) {
     const response = await fetch(base + path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
     if (!response.ok) {
       let detail = '';
-      try { const body = await response.json(); detail = body.detail || body.message || ''; } catch {}
+      try { const body = await response.json(); detail = body.error?.message || body.detail || body.message || body.error?.detail || ''; } catch {}
       throw new Error(response.status === 429 ? 'The catalog is busy. Please wait a moment and try again.' : `Koni-Nime API request failed (${response.status})${detail ? ': '+detail : '.'}`);
     }
     return await response.json();
