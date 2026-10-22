@@ -105,10 +105,10 @@ function renderGrid(items) {
     return;
   }
   grid.innerHTML = items.map((item, index) => card(item, index)).join('');
-  $('.anime-card', grid).forEach((el, index) => {
+  $$('.anime-card', grid).forEach((el, index) => {
     el.addEventListener('click', () => openDetails(items[index]));
   });
-  $('.quick-save', grid).forEach((el, index) => {
+  $$('.quick-save', grid).forEach((el, index) => {
     el.addEventListener('click', event => {
       event.preventDefault();
       event.stopPropagation();
