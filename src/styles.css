@@ -104,3 +104,43 @@ body {
 @media (prefers-reduced-motion:reduce) {
   .anime-card:hover .poster-wrap,.episode-row:hover,.primary-btn:hover,.glass-btn:hover { transform:none; }
 }
+
+/* Dark cinema / TV-inspired finish */
+:root{--bg:#070809;--panel:#111315;--panel2:#1a1d20;--text:#f7f7f7;--muted:#a1a5aa;--line:rgba(255,255,255,.11);--violet:#e50914;--pink:#ff3442;--cyan:#e5e5e5}
+body{background:linear-gradient(180deg,#080909 0%,#0a0b0c 45%,#070808 100%);background-attachment:fixed}
+.hero{background:linear-gradient(90deg,#070808 0%,rgba(7,8,8,.94) 31%,rgba(7,8,8,.52) 66%,rgba(7,8,8,.18) 100%),radial-gradient(ellipse at 78% 30%,#482024 0%,#201416 36%,#090909 75%);border-color:#ffffff12}
+.hero h1 span{background:linear-gradient(90deg,#fff,#ff777e);-webkit-background-clip:text;background-clip:text}
+.brand-mark,.primary-btn{background:linear-gradient(135deg,#ff3945,#b20710 90%);box-shadow:0 7px 24px #e5091433}
+.brand-accent,.text-btn,.back-btn{color:#ff626b}
+.eyebrow,.kicker,.hero-tag{color:#ff777e}
+.live-dot{background:#e50914;box-shadow:0 0 12px #e50914}
+.avatar{background:linear-gradient(135deg,#ff3945,#8e070d)}
+.chip.active,.genre-chip.active{background:#e5091420;border-color:#e5091490;color:#fff}
+.poster-wrap{background:linear-gradient(145deg,#242628,#101112);border-color:#ffffff10}
+.anime-card:hover .poster-wrap{border-color:#e5091480;box-shadow:0 15px 35px #0009,0 0 0 1px #e509141c}
+.quick-save.saved{color:#ff737a}
+.episode-play,.genre-tags span{background:#e509141a;color:#ff777e}
+.episode-row:hover{background:#e509140b;border-color:#e5091466}
+.bottom-nav{background:rgba(8,9,10,.94);border-color:#ffffff12;box-shadow:0 -12px 40px #0008}
+.nav-item.active{color:#ff737a}.nav-item.active span{filter:drop-shadow(0 0 7px #e50914)}
+.search-input-wrap{border-color:#e509145c;background:#111213}
+.empty-state{background:linear-gradient(145deg,#ffffff07,#ffffff01);border-color:#ffffff14}
+.settings-dialog{background:#111315;border-color:#ffffff1c}
+.settings-dialog::backdrop{background:#000d}
+.setting-row select,.profile-field input{background:#191b1d;border:1px solid var(--line);border-radius:9px;color:var(--text);padding:10px;max-width:48%;font-size:12px}
+.profile-field{display:flex;flex-direction:column;gap:8px;margin:16px 0;color:#d4d6d8;font-size:12px}
+.profile-field input{max-width:none;width:100%;font-size:14px}
+.account-hero{display:flex;align-items:center;gap:18px;padding:28px 0 22px;border-bottom:1px solid var(--line)}
+.account-hero h1{font:700 clamp(28px,5vw,42px)/1.1 'Space Grotesk',sans-serif;margin:8px 0 5px;letter-spacing:-1px}
+.account-avatar{width:76px;height:76px;flex:0 0 auto;display:grid;place-items:center;border-radius:50%;font-size:29px;font-weight:800;background:linear-gradient(145deg,#f33,#8e070d);box-shadow:0 12px 35px #e5091433}
+.account-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:22px 0}
+.account-stats>div{display:flex;flex-direction:column;gap:5px;padding:16px;border:1px solid var(--line);background:#ffffff05;border-radius:14px}
+.account-stats strong{font-size:24px}.account-stats span,.download-item small{font-size:11px;color:var(--muted)}
+.account-actions,.player-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 28px}
+.account-note{font-size:11px;color:var(--muted);line-height:1.7;margin:24px 0}
+.genre-rail{display:flex;gap:9px;overflow:auto;padding:0 0 20px;scrollbar-width:none}.genre-rail::-webkit-scrollbar{display:none}
+.genre-chip{flex:0 0 auto;padding:9px 15px;border:1px solid var(--line);border-radius:999px;background:#ffffff06;color:#d7d8da;font-size:11px;transition:background .2s,border-color .2s}
+.genre-chip:hover{border-color:#e5091470}.download-empty{max-width:740px;margin:auto}.download-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:12px;background:#e509141b;color:#ff6c75;font-size:20px}
+.download-item{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid var(--line);border-radius:14px;margin:10px 0;background:#ffffff04}.download-item>div{display:flex;flex-direction:column;gap:5px;flex:1}.download-item strong{font-size:12px}.download-state{font-size:10px;color:#b8e8c8}
+.compact-catalog .poster-grid{gap:15px 12px}.compact-catalog .card-title{font-size:11px}.compact-catalog .poster-wrap{border-radius:10px}
+@media(max-width:520px){.account-avatar{width:62px;height:62px}.account-stats>div{padding:12px 10px}.account-stats strong{font-size:21px}.account-stats span{font-size:10px}.bottom-nav{grid-template-columns:repeat(5,minmax(0,1fr))}.nav-item{font-size:9px}}
