@@ -30,10 +30,19 @@ function normalize(item = {}) {
 }
 function extractList(data) {
   if (Array.isArray(data)) return data;
-  for (const key of ['results','suggestions','media','animes','anime','trending','popular','latest','episodes']) {
-    if (Array.isArray(data?.[key])) return data[key];
-    if (Array.isArray(data?.data?.[key])) return data.data[key];
-    if (Array.isArray(data?.Page?.[key])) return data.Page[key];
+  const keys = ['results','suggestions','media','animes','anime','trending','popular','latest','episodes','items','list','data','Page'];
+  const queue = [data];
+  const seen = new Set();
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || typeof node !== 'object' || seen.has(node)) continue;
+    seen.add(node);
+    if (Array.isArray(node)) return node;
+    for (const key of keys) {
+      const value = node[key];
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === 'object') queue.push(value);
+    }
   }
   return [];
 }
@@ -41,7 +50,7 @@ async function api(path, options = {}) {
   const base = apiBase();
   if (!base) throw new Error('Kuhi API is not configured. Deploy the API service, or enter its public HTTPS URL in Settings.');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), 35000);
   try {
     const response = await fetch(base + path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
     if (!response.ok) {
@@ -114,9 +123,10 @@ async function loadHome(category = 'home') {
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
   } catch (error) {
-    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><button class="outline-btn" id="retry-load">Try again</button></div>';
+    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><div class="detail-actions"><button class="outline-btn" id="retry-load">Try again</button><button class="glass-btn" id="open-miruro">Open Miruro ↗</button></div></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
+    $('#open-miruro')?.addEventListener('click', () => window.open('https://www.miruro.ru/', '_blank', 'noopener,noreferrer'));
     setStatus('Unable to connect to Kuhi API.');
   }
 }
@@ -152,8 +162,9 @@ function makeEpisodes(info, providerData = null) {
 async function openDetails(item) {
   if (!item) return;
   state.selected = normalize(item); showView('detail');
-  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
+  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button><button class="glass-btn" id="detail-miruro">Watch on Miruro ↗</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
   $('#detail-play').addEventListener('click', () => $('#episode-list').scrollIntoView({behavior:'smooth'}));
+  $('#detail-miruro').addEventListener('click', () => window.open('https://www.miruro.ru/', '_blank', 'noopener,noreferrer'));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
     const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id));
