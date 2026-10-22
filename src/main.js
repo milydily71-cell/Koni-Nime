@@ -1,7 +1,7 @@
 import Hls from 'hls.js';
 import './styles.css';
 
-const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
+const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || 'https://koni-nime-api.onrender.com').trim().replace(/\/+$/, '');
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
