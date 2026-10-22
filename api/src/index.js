@@ -105,11 +105,23 @@ export async function cached(key, ttlMs, loader) {
   const task = (async () => {
     const value = await loader();
     if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
-    cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    const now = Date.now();
+    cache.set(key, { value, expiresAt: now + ttlMs, staleUntil: now + ttlMs + 24 * 60 * 60 * 1000 });
     return value;
   })();
   pending.set(key, task);
-  try { return await task; } finally { pending.delete(key); }
+  try {
+    return await task;
+  } catch (error) {
+    // Keep the last known-good catalog available during short upstream outages/rate limits.
+    if (entry && entry.staleUntil > Date.now()) {
+      console.warn('[koni-nime-api] Serving stale cache for', key);
+      return entry.value;
+    }
+    throw error;
+  } finally {
+    pending.delete(key);
+  }
 }
 
 async function fetchJson(url, options = {}) {
@@ -168,24 +180,57 @@ async function anilistCatalog(category, page, perPage) {
   const data = await anilist(mediaQuery(sort), { page, perPage, sort: [sort] });
   return (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' }));
 }
+function normalizeJikanAnime(item = {}) {
+  const malId = Number(item.mal_id) || 0;
+  return normalizeAnime({
+    id: malId ? 'mal-' + malId : item.title,
+    title: { english: item.title_english || '', userPreferred: item.title || '', romaji: item.title || '' },
+    coverImage: { extraLarge: item.images?.webp?.large_image_url || item.images?.jpg?.large_image_url || '' },
+    description: item.synopsis || '',
+    format: item.type || 'ANIME',
+    status: item.status || '',
+    averageScore: item.score ? Math.round(Number(item.score) * 10) : '',
+    genres: (item.genres || []).map(genre => genre.name).filter(Boolean),
+    episodes: item.episodes || 0,
+    seasonYear: item.year || item.aired?.prop?.from?.year || null,
+    source: 'jikan'
+  });
+}
+async function jikanCatalog(category, page, perPage) {
+  const filter = category === 'recent' ? 'airing' : 'bypopularity';
+  const data = await fetchJson('https://api.jikan.moe/v4/top/anime?page=' + page + '&limit=' + Math.min(25, perPage) + '&filter=' + filter, {
+    headers: { 'User-Agent': 'Koni-Nime/1.0 (anime catalog fallback)' }
+  });
+  return (Array.isArray(data?.data) ? data.data : []).map(normalizeJikanAnime).filter(item => item.id);
+}
 async function catalog(category, page, perPage) {
   return cached('catalog:' + category + ':' + page + ':' + perPage, 180000, async () => {
     const limit = Math.min(100, perPage);
     try {
       if (category === 'popular') {
         const data = await reanime('/top?period=week&limit=' + limit);
-        return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+        const items = extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id);
+        if (items.length) return { items, provider: 'rean' + 'ime' };
+      } else {
+        const data = await reanime('/home?limit=' + limit);
+        const list = category === 'recent'
+          ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
+          : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
+        const items = extractList(list).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id);
+        if (items.length) return { items, provider: 'rean' + 'ime' };
       }
-      const data = await reanime('/home?limit=' + limit);
-      const list = category === 'recent'
-        ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
-        : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
-      const items = extractList(list).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id);
-      if (items.length) return { items, provider: 'rean' + 'ime' };
     } catch (error) {
-      console.warn('[koni-nime-api] ReAnime catalog failed; using AniList fallback:', error?.message || error);
+      console.warn('[koni-nime-api] ReAnime catalog failed; trying AniList:', error?.message || error);
     }
-    return { items: await anilistCatalog(category, page, perPage), provider: 'anilist' };
+    try {
+      const items = await anilistCatalog(category, page, perPage);
+      if (items.length) return { items, provider: 'anilist' };
+    } catch (error) {
+      console.warn('[koni-nime-api] AniList catalog failed; trying Jikan:', error?.message || error);
+    }
+    const items = await jikanCatalog(category, page, perPage);
+    if (items.length) return { items, provider: 'jikan' };
+    throw new Error('ReAnime, AniList and Jikan returned no catalog items.');
   });
 }
 async function searchCatalog(query, page, perPage) {
@@ -198,11 +243,20 @@ async function searchCatalog(query, page, perPage) {
     } catch (error) {
       console.warn('[koni-nime-api] ReAnime search failed; using AniList fallback:', error?.message || error);
     }
-    const data = await anilist(
-      'query ($search: String, $page: Int, $perPage: Int) { Page(page: $page, perPage: $perPage) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }',
-      { search: query, page, perPage }
-    );
-    return { items: (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' })), provider: 'anilist' };
+    try {
+      const data = await anilist(
+        'query ($search: String, $page: Int, $perPage: Int) { Page(page: $page, perPage: $perPage) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }',
+        { search: query, page, perPage }
+      );
+      const items = (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' }));
+      if (items.length) return { items, provider: 'anilist' };
+    } catch (error) {
+      console.warn('[koni-nime-api] AniList search failed; trying Jikan:', error?.message || error);
+    }
+    const data = await fetchJson('https://api.jikan.moe/v4/anime?q=' + encodeURIComponent(query) + '&page=' + page + '&limit=' + Math.min(25, perPage) + '&sfw=true', {
+      headers: { 'User-Agent': 'Koni-Nime/1.0 (anime search fallback)' }
+    });
+    return { items: (Array.isArray(data?.data) ? data.data : []).map(normalizeJikanAnime).filter(item => item.id), provider: 'jikan' };
   });
 }
 async function findAniListByTitle(title) {
