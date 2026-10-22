@@ -180,7 +180,7 @@ async function anilistCatalog(category, page, perPage) {
   const data = await anilist(mediaQuery(sort), { page, perPage, sort: [sort] });
   return (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' }));
 }
-function normalizeJikanAnime(item = {}) {
+export function normalizeJikanAnime(item = {}) {
   const malId = Number(item.mal_id) || 0;
   return normalizeAnime({
     id: malId ? 'mal-' + malId : item.title,
