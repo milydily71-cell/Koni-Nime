@@ -16,7 +16,15 @@ test('deduplicates episode numbers within each audio category', () => {
   assert.deepEqual(list.map(ep => ep.audio + ':' + ep.number), ['sub:1', 'dub:1', 'sub:2']);
 });
 
-test('normalizes ReAnime snake-case metadata and slugs', () => {\n  const anime = normalizeAnime({ slug: 'one-piece-xamk74', title: 'One Piece', cover_image: { large: 'https://example.test/one-piece.jpg' }, description: 'Pirates', source: 'rean' + 'ime' });\n  assert.equal(anime.id, 'one-piece-xamk74');\n  assert.equal(anime.title, 'One Piece');\n  assert.equal(anime.image, 'https://example.test/one-piece.jpg');\n  assert.equal(anime.description, 'Pirates');\n});\n\ntest('filters unsafe or invalid stream URLs', () => {
+test('normalizes ReAnime snake-case metadata and slugs', () => {
+  const anime = normalizeAnime({ slug: 'one-piece-xamk74', title: 'One Piece', cover_image: { large: 'https://example.test/one-piece.jpg' }, description: 'Pirates', source: 'rean' + 'ime' });
+  assert.equal(anime.id, 'one-piece-xamk74');
+  assert.equal(anime.title, 'One Piece');
+  assert.equal(anime.image, 'https://example.test/one-piece.jpg');
+  assert.equal(anime.description, 'Pirates');
+});
+
+test('filters unsafe or invalid stream URLs', () => {
   const list = normalizeStreams({ streams: [{ url: 'https://cdn.example/video.m3u8' }, { url: 'javascript:alert(1)' }, { url: 'bad url' }] });
   assert.equal(list.length, 1);
   assert.equal(list[0].type, 'hls');
