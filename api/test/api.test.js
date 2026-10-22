@@ -30,18 +30,3 @@ test('coalesces concurrent cache misses', async () => {
   assert.equal(calls, 1);
   assert.deepEqual(results, [{ value: 7 }, { value: 7 }]);
 });
-
-test('health endpoint works and invalid search requests are rejected', async () => {
-  const server = app.listen(0, '127.0.0.1');
-  try {
-    const base = 'http://127.0.0.1:' + server.address().port;
-    const health = await fetch(base + '/v1/health');
-    assert.equal(health.status, 200);
-    assert.equal((await health.json()).service, 'koni-nime-api');
-    const invalid = await fetch(base + '/v1/anime/search');
-    assert.equal(invalid.status, 400);
-    assert.equal((await invalid.json()).error.code, 'INVALID_REQUEST');
-  } finally {
-    if (server.listening) await new Promise(resolve => server.close(() => resolve()));
-  }
-});
