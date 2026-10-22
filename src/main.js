@@ -121,7 +121,7 @@ async function loadHome(category = 'home') {
   searchRequestId++;
   state.category = category;
   $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest anime'})[category] || 'Discover anime';
-  $$$( '.chip' ).forEach(c => c.classList.toggle('active', c.dataset.category === category));
+  $( '.chip' ).forEach(c => c.classList.toggle('active', c.dataset.category === category));
   if (category === 'library') { renderLibrary(); return; }
   setStatus('Finding your next favorite…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
