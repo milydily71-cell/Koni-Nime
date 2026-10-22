@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build release APK
+    name: Build installable debug APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -52,14 +52,14 @@ jobs:
       - name: Sync Capacitor assets
         run: npx cap sync android
 
-      - name: Build release APK
+      - name: Build debug APK
         working-directory: android
-        run: ./gradlew --no-daemon assembleRelease
+        run: ./gradlew --no-daemon assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Koni-Nime-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
+          name: Koni-Nime-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
