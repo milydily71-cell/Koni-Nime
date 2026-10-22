@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { app, normalizeAnime, episodeEntries, normalizeStreams, cached } from '../src/index.js';
+import { app, normalizeAnime, normalizeJikanAnime, episodeEntries, normalizeStreams, cached } from '../src/index.js';
 
 test('normalizes title, synopsis, genres and episode count', () => {
   const anime = normalizeAnime({ id: 20, title: { english: 'Naruto', romaji: 'NARUTO' }, description: 'Ninja<br>story', coverImage: { large: 'https://example.test/poster.jpg' }, genres: ['Action', { name: 'Adventure' }], episodes: 220 });
@@ -37,4 +37,35 @@ test('coalesces concurrent cache misses', async () => {
   const results = await Promise.all([cached(key, 1000, load), cached(key, 1000, load)]);
   assert.equal(calls, 1);
   assert.deepEqual(results, [{ value: 7 }, { value: 7 }]);
+});
+
+
+test('normalizes Jikan catalog records into Koni-Nime anime cards', () => {
+  const anime = normalizeJikanAnime({
+    mal_id: 123,
+    title: 'Kimi no Na wa.',
+    title_english: 'Your Name.',
+    images: { webp: { large_image_url: 'https://example.test/your-name.webp' } },
+    synopsis: 'Two teenagers find a mysterious connection.',
+    type: 'Movie',
+    status: 'Finished Airing',
+    score: 8.8,
+    genres: [{ name: 'Romance' }, { name: 'Drama' }],
+    episodes: 1,
+    year: 2016
+  });
+  assert.equal(anime.id, 'mal-123');
+  assert.equal(anime.title, 'Your Name.');
+  assert.equal(anime.image, 'https://example.test/your-name.webp');
+  assert.equal(anime.score, 88);
+  assert.deepEqual(anime.genres, ['Romance', 'Drama']);
+  assert.equal(anime.source, 'jikan');
+});
+
+test('serves last known-good cache entry when refresh fails', async () => {
+  const key = 'stale-test-' + Date.now();
+  assert.deepEqual(await cached(key, 1, async () => ({ items: ['cached'] })), { items: ['cached'] });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  const value = await cached(key, 1, async () => { throw new Error('upstream unavailable'); });
+  assert.deepEqual(value, { items: ['cached'] });
 });
