@@ -51,7 +51,7 @@ async function api(path, options = {}) {
   const base = apiBase();
   if (!base) throw new Error('Koni-Nime API is not configured. Deploy the API service, or enter its public HTTPS URL in Settings.');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 35000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const response = await fetch(base + path, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
     if (!response.ok) {
@@ -113,7 +113,7 @@ function card(item, index = 0) {
   </button>`;
 }
 async function loadHome(category = 'home') {
-  searchRequestId++;
+  const requestId = ++searchRequestId;
   state.category = category;
   $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest anime'})[category] || 'Discover anime';
   $( '.chip' ).forEach(c => c.classList.toggle('active', c.dataset.category === category));
@@ -123,10 +123,12 @@ async function loadHome(category = 'home') {
   const routes = { home:'/anime/spotlight', popular:'/anime/popular?page=1&per_page=24', recent:'/anime/recent?page=1&per_page=24' };
     try {
     const data = await api(routes[category] || routes.home);
+    if (requestId !== searchRequestId) return;
     state.items = extractList(data).map(normalize);
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
   } catch (error) {
+    if (requestId !== searchRequestId) return;
     $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><button class="outline-btn" id="retry-load">Try again</button></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
