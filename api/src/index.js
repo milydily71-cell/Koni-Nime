@@ -317,8 +317,20 @@ async function animeInfo(id, titleHint = '') {
     } catch (error) {
       console.warn('[koni-nime-api] ReAnime details failed; using AniList fallback:', error?.message || error);
     }
-    // AniList catalog entries have numeric IDs; provider entries may only have slugs.
+    // Accept AniList IDs, MyAnimeList IDs (mal-123), and provider slugs.
     let mediaId = /^\d+$/.test(String(id)) ? Number(id) : null;
+    const malMatch = String(id).match(/^mal-(\d+)$/i);
+    if (!mediaId && malMatch) {
+      try {
+        const mapped = await anilist(
+          'query ($idMal: Int) { Media(idMal: $idMal, type: ANIME, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }',
+          { idMal: Number(malMatch[1]) }
+        );
+        if (mapped?.Media) return normalizeAnime({ ...mapped.Media, source: 'anilist' });
+      } catch (error) {
+        console.warn('[koni-nime-api] AniList MAL-ID detail lookup failed:', error?.message || error);
+      }
+    }
     if (!mediaId && titleHint) {
       const match = await findAniListByTitle(titleHint);
       if (match?.id) mediaId = Number(match.id);
@@ -335,8 +347,20 @@ async function animeInfo(id, titleHint = '') {
 }
 async function episodeData(id, titleHint = '') {
   return cached('episodes:' + id + ':' + String(titleHint || '').toLowerCase(), 120000, async () => {
-    // Resolve provider slugs to AniList IDs when a title is available.
+    // Resolve AniList IDs, MAL IDs, and provider slugs before calling Aniweeb.
     let mediaId = /^\d+$/.test(String(id)) ? String(id) : '';
+    const malMatch = String(id).match(/^mal-(\d+)$/i);
+    if (!mediaId && malMatch) {
+      try {
+        const mapped = await anilist(
+          'query ($idMal: Int) { Media(idMal: $idMal, type: ANIME, isAdult: false) { id } }',
+          { idMal: Number(malMatch[1]) }
+        );
+        if (mapped?.Media?.id) mediaId = String(mapped.Media.id);
+      } catch (error) {
+        console.warn('[koni-nime-api] AniList MAL-ID episode lookup failed:', error?.message || error);
+      }
+    }
     if (!mediaId && titleHint) {
       try {
         const match = await findAniListByTitle(titleHint);
@@ -346,7 +370,7 @@ async function episodeData(id, titleHint = '') {
       }
     }
     // Prefer Aniweeb's episode list after resolving a numeric AniList ID.
-      try {
+    if (mediaId) try {
         const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(mediaId));
         const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
         if (episodes.length) {
@@ -398,6 +422,9 @@ async function episodeData(id, titleHint = '') {
   });
 }
 async function resolveSource(id, episode, provider, category) {
+  if (String(id).startsWith('aniweeb-') || String(id).startsWith('anilist-')) {
+    throw new Error('This episode ID is metadata-only or belongs to Aniweeb. A playable server URL is not available from the configured resolver.');
+  }
   const servers = await reanime('/servers/' + encodeURIComponent(id) + '/' + episode);
   const list = category === 'dub' ? (servers?.dub || []) : (servers?.sub || []);
   if (!list.length) throw new Error('No ' + category + ' servers returned by ReAnime.');
@@ -410,7 +437,7 @@ async function resolveSource(id, episode, provider, category) {
 
 app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
-app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['rean ime'.replace(' ', ''), 'anilist'], episodeSources: ['aniweeb', 'rean ime'.replace(' ', '')], playback: ['aniweeb-embed'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.1.0', providers: { metadata: ['rean ime'.replace(' ', ''), 'anilist', 'jikan'], episodeSources: ['aniweeb', 'rean ime'.replace(' ', ''), 'anilist-metadata'], playback: ['rean ime'.replace(' ', '')] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
 
 async function sendCatalog(category, req, res) {
   const { page, perPage } = pageParams(req);
