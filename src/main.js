@@ -2,7 +2,6 @@ import Hls from 'hls.js';
 import './styles.css';
 
 const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || 'https://koni-nime-api.onrender.com').trim().replace(/\/+$/, '');
-const REANIME_SITE = 'https://reanime.to';
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
@@ -47,10 +46,6 @@ function extractList(data) {
     }
   }
   return [];
-}
-function openReAnime(title = '') {
-  const url = title ? REANIME_SITE + '/search?q=' + encodeURIComponent(title) : REANIME_SITE + '/home';
-  window.open(url, '_blank', 'noopener,noreferrer');
 }
 async function api(path, options = {}) {
   const base = apiBase();
@@ -132,10 +127,9 @@ async function loadHome(category = 'home') {
     renderGrid(state.items);
     setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
   } catch (error) {
-    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><div class="detail-actions"><button class="outline-btn" id="retry-load">Try again</button><button class="glass-btn" id="open-reanime">Open Re:Anime ↗</button></div></div>';
+    $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><button class="outline-btn" id="retry-load">Try again</button></div>';
     $('.empty-state p').textContent = error.message;
     $('#retry-load')?.addEventListener('click', () => loadHome(category));
-    $('#open-reanime')?.addEventListener('click', () => openReAnime());
     setStatus('Unable to connect to Koni-Nime API.');
   }
 }
@@ -175,9 +169,8 @@ function makeEpisodes(info, providerData = null) {
 async function openDetails(item) {
   if (!item) return;
   state.selected = normalize(item); showView('detail');
-  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button><button class="glass-btn" id="detail-reanime">Watch on Re:Anime ↗</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
+  $('#detail-content').innerHTML = `<div class="detail-hero"><div class="detail-backdrop" style="background-image:url('${esc(state.selected.banner || state.selected.image)}')"></div><div class="detail-poster">${state.selected.image ? `<img src="${esc(state.selected.image)}" alt="">` : '✦'}</div><div class="detail-copy"><span class="kicker">YOUR NEXT WATCH</span><h1>${esc(state.selected.title)}</h1><p class="detail-meta">${esc(state.selected.type)} ${state.selected.status ? ' · '+esc(state.selected.status) : ''}${state.selected.score ? ' · ★ '+esc(Number(state.selected.score)>10?(Number(state.selected.score)/10).toFixed(1):state.selected.score) : ''}</p><div class="detail-actions"><button class="primary-btn" id="detail-play">▶ Episodes</button><button class="glass-btn" id="detail-save">${library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'}</button></div></div></div><div class="synopsis"><span class="kicker">THE STORY</span><p>${esc(state.selected.description)}</p><div class="genre-tags">${state.selected.genres.map(g=>'<span>'+esc(g)+'</span>').join('')}</div></div><div class="section-head"><div><span class="kicker">THE JOURNEY</span><h2>Episodes</h2></div></div><div class="episode-list" id="episode-list"><div class="loading-line">Loading anime details…</div></div>`;
   $('#detail-play').addEventListener('click', () => $('#episode-list').scrollIntoView({behavior:'smooth'}));
-  $('#detail-reanime').addEventListener('click', () => openReAnime(state.selected?.title || ''));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
     const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id) + '?title=' + encodeURIComponent(state.selected.title));
