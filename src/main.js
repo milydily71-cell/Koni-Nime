@@ -7,7 +7,7 @@ const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
 const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
-const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
+const write = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (error) { console.warn('[Koni-Nime] Could not save local preference:', error); toast('Could not save on this device. Check browser storage settings.'); return false; } };
 const library = () => read('koni-library', []);
 const history = () => read('koni-history', []);
 const apiBase = () => ($('#api-base')?.value || read('koni-api-base', DEFAULT_API) || DEFAULT_API).trim().replace(/\/+$/, '');
@@ -118,6 +118,7 @@ function card(item, index = 0) {
   </button>`;
 }
 async function loadHome(category = 'home') {
+  searchRequestId++;
   state.category = category;
   $('#catalog-title').innerHTML = ({home:'Trending now <span class="title-spark">✦</span>',popular:'Popular anime',recent:'Latest anime'})[category] || 'Discover anime';
   $$('.chip').forEach(c => c.classList.toggle('active', c.dataset.category === category));
@@ -139,16 +140,19 @@ async function loadHome(category = 'home') {
   }
 }
 let searchTimer;
+let searchRequestId = 0;
 async function searchAnime(query) {
+  const requestId = ++searchRequestId;
   state.query = query.trim();
   if (!state.query) { loadHome('home'); return; }
   showView('search'); $('#catalog-title').textContent = 'Search results'; setStatus('Searching the catalog…');
   $('#anime-grid').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   try {
     const data = await api('/anime/search?query=' + encodeURIComponent(state.query) + '&page=1&per_page=24');
+    if (requestId !== searchRequestId) return;
     state.items = extractList(data).map(normalize); renderGrid(state.items);
     setStatus(state.items.length ? `Found ${state.items.length} matching titles` : 'No matches yet. Try a different title.');
-  } catch (e) { $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p></div>`; setStatus('Please check your API URL and retry.'); }
+  } catch (e) { if (requestId !== searchRequestId) return; $('#anime-grid').innerHTML = `<div class="empty-state"><h3>Search unavailable</h3><p>${esc(e.message)}</p><button class="outline-btn" id="retry-search">Try again</button></div>`; $('#retry-search')?.addEventListener('click', () => searchAnime(state.query)); setStatus('Search temporarily unavailable. You can retry.'); }
 }
 function makeEpisodes(info, providerData = null) {
   const found = [];
@@ -302,6 +306,6 @@ function init() {
   $('#preferred-audio').value = read('koni-preferred-audio','sub');
   document.documentElement.classList.toggle('compact-catalog',$('#catalog-density').value==='compact');
   document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked);
-  bindEvents(); renderContinue(); loadHome('home');
+  bindEvents(); renderContinue(); loadHome('home').catch(error => { console.error('[Koni-Nime] Catalog initialization failed:', error); setStatus('Catalog could not load. Use Reload catalog to retry.'); });
 }
 init();
