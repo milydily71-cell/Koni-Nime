@@ -219,7 +219,7 @@ async function animeInfo(id) {
       console.warn('[koni-nime-api] ReAnime details failed; using AniList fallback:', error?.message || error);
     }
     // The catalog fallback uses AniList numeric media IDs, so resolve those IDs directly.
-    if (!/^\\d+$/.test(String(id))) throw new Error('AniList fallback requires a numeric AniList media ID.');
+    if (!/^\d+$/.test(String(id))) throw new Error('AniList fallback requires a numeric AniList media ID.');
     const data = await anilist(
       'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }',
       { id: Number(id) }
@@ -246,7 +246,7 @@ async function episodeData(id) {
     }
     // AniList supplies episode counts, not playable episode streams. This fallback keeps
     // the episode list available while making no claim that playback sources are resolved.
-    if (!/^\\d+$/.test(String(id))) throw new Error('AniList episode fallback requires a numeric AniList media ID.');
+    if (!/^\d+$/.test(String(id))) throw new Error('AniList episode fallback requires a numeric AniList media ID.');
     const data = await anilist(
       'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id episodes title { userPreferred romaji english } } }',
       { id: Number(id) }
