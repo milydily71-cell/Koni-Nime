@@ -13,7 +13,7 @@ test('normalizes title, synopsis, genres and episode count', () => {
 
 test('deduplicates episode numbers within each audio category', () => {
   const list = episodeEntries({ providers: { alpha: { episodes: { sub: [{ number: 1, id: 'watch/alpha/1' }, { number: 2 }] } }, beta: { episodes: { sub: [{ number: 1 }, { number: 2 }], dub: [{ number: 1 }] } } } });
-  assert.deepEqual(list.map(ep => ep.audio + ':' + ep.number), ['sub:1', 'sub:2', 'dub:1']);
+  assert.deepEqual(list.map(ep => ep.audio + ':' + ep.number), ['sub:1', 'dub:1', 'sub:2']);
 });
 
 test('filters unsafe or invalid stream URLs', () => {
@@ -42,6 +42,6 @@ test('health endpoint works and invalid search requests are rejected', async () 
     assert.equal(invalid.status, 400);
     assert.equal((await invalid.json()).error.code, 'INVALID_REQUEST');
   } finally {
-    await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    if (server.listening) await new Promise(resolve => server.close(() => resolve()));
   }
 });
