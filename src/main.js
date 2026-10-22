@@ -176,7 +176,7 @@ async function openDetails(item) {
   try {
     const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id) + '?title=' + encodeURIComponent(state.selected.title));
     const info = infoData?.Media || infoData?.results?.Media || infoData?.results || infoData?.data?.Media || infoData?.data || infoData?.anime || infoData;
-    const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.slug || state.selected.id };
+    const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.id || info?.slug || state.selected.id };
     state.selected = normalize(mergedInfo);
     if (!state.selected.description || state.selected.description === 'No synopsis is available for this title yet.') {
       const synopsis = info?.description || info?.synopsis || info?.overview || info?.description?.english;
