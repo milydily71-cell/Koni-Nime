@@ -205,7 +205,19 @@ async function searchCatalog(query, page, perPage) {
     return { items: (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' })), provider: 'anilist' };
   });
 }
-async function animeInfo(id) {
+async function findAniListByTitle(title) {
+  const query = String(title || '').trim().slice(0, 120);
+  if (!query) return null;
+  const data = await anilist(
+    'query ($search: String) { Page(page: 1, perPage: 5) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { id episodes title { romaji english native userPreferred } } } }',
+    { search: query }
+  );
+  const items = data?.Page?.media || [];
+  const norm = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const wanted = norm(query);
+  return items.find(item => [item.title?.english, item.title?.romaji, item.title?.native, item.title?.userPreferred].some(t => norm(t) === wanted)) || items[0] || null;
+}
+async function animeInfo(id, titleHint = '') {
   return cached('info:' + id, 900000, async () => {
     try {
       const data = await reanime('/info/' + encodeURIComponent(id));
@@ -229,19 +241,19 @@ async function animeInfo(id) {
     return normalizeAnime({ ...item, source: 'anilist' });
   });
 }
-async function episodeData(id) {
+async function episodeData(id, titleHint = '') {
   return cached('episodes:' + id, 120000, async () => {
     // Prefer Aniweeb's unified episode list for AniList IDs. This gives the UI real
     // episode availability instead of fabricating an episode count from metadata.
     if (/^\\d+$/.test(String(id))) {
       try {
-        const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(id));
+        const data = await fetchJson('https://api.aniweeb.net/episodes/' + encodeURIComponent(mediaId));
         const episodes = Array.isArray(data?.episodes) ? data.episodes : [];
         if (episodes.length) {
           const normalized = (track) => episodes.filter(ep => ep?.[track] === true).map((ep, index) => ({
             number: Number(ep.number || index + 1),
             title: ep.title || 'Episode ' + Number(ep.number || index + 1),
-            id: 'aniweeb-' + id + '-' + Number(ep.number || index + 1)
+            id: 'aniweeb-' + mediaId + '-' + Number(ep.number || index + 1)
           })).filter(ep => ep.number > 0);
           const sub = normalized('sub');
           const dub = normalized('dub');
@@ -280,7 +292,7 @@ async function episodeData(id) {
     return { providers: { anilist: { episodes: { sub: Array.from({ length: count }, (_, index) => ({
       number: index + 1,
       title: 'Episode ' + (index + 1),
-      id: 'anilist-' + id + '-episode-' + (index + 1),
+      id: 'anilist-' + mediaId + '-episode-' + (index + 1),
       animeTitle: title,
       metadataOnly: true
     })) } } } };
@@ -325,7 +337,7 @@ app.get('/v1/anime/search', sendSearch);
 async function sendInfo(req, res) {
   if (!validId(req.params.id)) return bad(res, 'Invalid anime ID.');
   try {
-    const item = await animeInfo(req.params.id);
+    const item = await animeInfo(req.params.id, String(req.query.title || ''));
     if (!item) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Anime not found.' } });
     return ok(res, item, { provider: item.source || 'unknown' });
   } catch (error) { return upstreamError(res, error, 'Anime details and synopsis are unavailable.'); }
@@ -336,7 +348,7 @@ app.get('/v1/anime/:id', sendInfo);
 async function sendEpisodes(req, res, versioned = false) {
   if (!validId(req.params.id)) return bad(res, 'Invalid anime ID.');
   try {
-    const raw = await episodeData(req.params.id);
+    const raw = await episodeData(req.params.id, String(req.query.title || ''));
     return versioned ? ok(res, episodeEntries(raw), { animeId: req.params.id, provider: 'rean' + 'ime', raw }) : ok(res, raw, { provider: 'miruro' });
   } catch (error) { return upstreamError(res, error, 'Episode listings are unavailable from the configured provider.'); }
 }
