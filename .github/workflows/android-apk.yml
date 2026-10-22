@@ -1,4 +1,4 @@
-name: Android APK
+name: Koni-Nime Android APK
 
 on:
   push:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build release APK
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,7 +27,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-          cache: gradle
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -35,52 +40,26 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Flutter (if project uses Flutter)
-        if: hashFiles('pubspec.yaml') != ''
-        uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
+      - name: Install dependencies
+        run: npm install
 
-      - name: Build Flutter APK
-        if: hashFiles('pubspec.yaml') != ''
-        run: |
-          flutter pub get
-          flutter build apk --release
+      - name: Build web app
+        run: npm run build
 
-      - name: Build Gradle APK
-        if: hashFiles('gradlew') != '' && hashFiles('pubspec.yaml') == ''
-        run: |
-          chmod +x ./gradlew
-          ./gradlew --no-daemon assembleRelease
+      - name: Generate Android project
+        run: npx cap add android
 
-      - name: Build Capacitor Android APK
-        if: hashFiles('package.json') != '' && hashFiles('pubspec.yaml') == '' && hashFiles('gradlew') == ''
-        run: |
-          if [ -f package-lock.json ]; then npm ci; elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile; elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile; else npm install; fi
-          if [ -d android ]; then
-            cd android
-            if [ -f gradlew ]; then chmod +x ./gradlew && ./gradlew --no-daemon assembleRelease; else echo "Android Gradle wrapper not found under android/"; exit 1; fi
-          else
-            echo "No Android Gradle project found. For web-only projects, add Capacitor Android platform first."
-            exit 1
-          fi
+      - name: Sync Capacitor assets
+        run: npx cap sync android
 
-      - name: Find APKs
-        id: apk
-        run: |
-          mkdir -p apk-output
-          find . -type f -path '*/build/outputs/apk/*/*.apk' -not -path './apk-output/*' -exec cp {} apk-output/ \;
-          if [ -z "$(ls -A apk-output)" ]; then
-            echo "No APK produced. Check the build logs and project build configuration."
-            exit 1
-          fi
-          ls -lh apk-output
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Koni-Nime-android-apk
-          path: apk-output/*.apk
+          name: Koni-Nime-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 14
