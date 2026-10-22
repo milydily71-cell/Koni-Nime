@@ -3,12 +3,12 @@
 A mobile-first anime discovery and watch interface with a cinematic dark violet theme, built with Vite and Capacitor for Android.
 
 ## Features
-- Home discovery screen and responsive anime poster grid
-- Search using the Tatakai API
-- Anime details and episode list
-- HLS/MP4 playback when the API returns a playable source
+- Home discovery using Kuhi API spotlight, popular and recent endpoints
+- Search using the Kuhi API
+- AniList-backed anime details and episode list
+- HLS/MP4 playback using the API's stream extraction endpoint when a compatible stream is available
 - Local watchlist and recently watched history
-- Configurable API base URL, loading/error states, and retry controls
+- Configurable Kuhi API base URL, loading/error states, and retry controls
 - GitHub Actions workflow for Android APK artifacts
 
 ## Run locally
@@ -29,10 +29,13 @@ cd android
 ./gradlew assembleDebug
 ```
 
-## API
-Default base URL: `https://api.tatakai.me`. The UI uses the documented HiAnime routes for home, search, anime info, and episode sources. The upstream API may change its schema, availability, or source support; the app displays errors rather than fabricating results. API base URL can be changed from Settings.
+## API setup
 
-API documentation: https://api.tatakai.me/docs
+Koni-Nime now targets the API in [aryaniiil/anime-api](https://github.com/aryaniiil/anime-api), whose FastAPI app exposes endpoints such as `/anime/spotlight`, `/anime/search?query=...`, `/anime/info/{anilist_id}`, `/anime/episodes/{anilist_id}`, and `/anime/extract/{query}?e=1&type=sub`.
 
-## Attribution and legal
-Tatakai is a separate upstream project. Review its license, attribution requirements, source-site terms, and applicable copyright laws before distributing this app. Koni-Nime does not host anime video content. Only access or stream content you are authorized to view.
+**Important:** that GitHub repository contains API source code; it does not provide a confirmed public API base URL. Deploy/run the API server first, then open Koni-Nime → Settings and enter its public HTTPS base URL (without a trailing slash). The server must be reachable from the Android device and allow CORS requests from the app's origin. For local testing, follow the upstream repository's installation instructions and use a LAN-reachable host address for a physical Android device.
+
+API source and endpoint documentation: https://github.com/aryaniiil/anime-api
+
+## Attribution, privacy and legal
+The API project describes itself as experimental and does not guarantee uptime or data accuracy. Koni-Nime does not host anime video content. Source availability and playback compatibility depend on the configured server and third-party providers. Only access or stream content you are authorized to view.
