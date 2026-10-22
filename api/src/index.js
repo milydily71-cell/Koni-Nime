@@ -277,7 +277,6 @@ async function episodeData(id, titleHint = '') {
       } catch (error) {
         console.warn('[koni-nime-api] Aniweeb episode list failed; trying existing providers:', error?.message || error);
       }
-    }
     try {
       const data = await reanime('/episodes/' + encodeURIComponent(id));
       const episodes = Array.isArray(data) ? data : data?.episodes || data?.data || [];
