@@ -280,7 +280,8 @@ function bindEvents() {
   $('#see-all').onclick = () => $('#trending-section').scrollIntoView({behavior:'smooth'});
   $('#search-input').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer=setTimeout(()=>searchAnime(e.target.value),350); });
   $('#clear-search').onclick = () => { $('#search-input').value=''; loadHome('home'); };
-  $$('.chip').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
+  $('.chip').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.category==='library')renderLibrary();else {showView('home');loadHome(el.dataset.category)}}));
+  $('.genre-chip').forEach(el=>el.addEventListener('click',()=>{ $('.genre-chip').forEach(ch=>ch.classList.toggle('active',ch===el)); $('#search-input').value=el.dataset.genre; searchAnime(el.dataset.genre); }));
   $('[data-nav]').forEach(el=>el.addEventListener('click',e=>{e.preventDefault();const nav=el.dataset.nav;if(nav==='account')renderAccount();else if(nav==='downloads')renderDownloads();else if(nav==='library')renderLibrary();else if(nav==='search'){showView('search');$('#search-input').focus()}else{showView('home');loadHome('home')}}));
   $('#back-catalog').onclick = () => { showView(state.query?'search':'home'); };
   $('#back-detail').onclick = () => openDetails(state.selected);
