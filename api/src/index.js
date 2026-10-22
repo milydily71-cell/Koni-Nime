@@ -207,22 +207,60 @@ async function searchCatalog(query, page, perPage) {
 }
 async function animeInfo(id) {
   return cached('info:' + id, 900000, async () => {
-    const data = await reanime('/info/' + encodeURIComponent(id));
-    const item = unwrap(data);
-    if (!item || typeof item !== 'object') return null;
-    const normalized = normalizeAnime({ ...item, id: item.slug || item.id || id, source: 'rean' + 'ime' });
-    normalized.episodes = Array.isArray(item.episodes) ? item.episodes.length : Number(item.episodes || 0) || 0;
-    return normalized;
+    try {
+      const data = await reanime('/info/' + encodeURIComponent(id));
+      const item = unwrap(data);
+      if (item && typeof item === 'object') {
+        const normalized = normalizeAnime({ ...item, id: item.slug || item.id || id, source: 'rean' + 'ime' });
+        normalized.episodes = Array.isArray(item.episodes) ? item.episodes.length : Number(item.episodes || 0) || 0;
+        if (normalized.title !== 'Untitled anime') return normalized;
+      }
+    } catch (error) {
+      console.warn('[koni-nime-api] ReAnime details failed; using AniList fallback:', error?.message || error);
+    }
+    // The catalog fallback uses AniList numeric media IDs, so resolve those IDs directly.
+    if (!/^\\d+$/.test(String(id))) throw new Error('AniList fallback requires a numeric AniList media ID.');
+    const data = await anilist(
+      'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }',
+      { id: Number(id) }
+    );
+    const item = data?.Media;
+    if (!item) return null;
+    return normalizeAnime({ ...item, source: 'anilist' });
   });
 }
 async function episodeData(id) {
   return cached('episodes:' + id, 120000, async () => {
-    const data = await reanime('/episodes/' + encodeURIComponent(id));
-    const episodes = Array.isArray(data) ? data : data?.episodes || data?.data || [];
-    return { providers: { reanime: { episodes: { sub: episodes.map((ep, index) => ({
-      number: Number(ep.number || ep.episode || ep.episode_number || index + 1),
-      title: ep.title || ep.name || 'Episode ' + Number(ep.number || ep.episode || index + 1),
-      id: String(ep.id || ep.slug || ep.number || index + 1)
+    try {
+      const data = await reanime('/episodes/' + encodeURIComponent(id));
+      const episodes = Array.isArray(data) ? data : data?.episodes || data?.data || [];
+      if (Array.isArray(episodes) && episodes.length) {
+        return { providers: { reanime: { episodes: { sub: episodes.map((ep, index) => ({
+          number: Number(ep.number || ep.episode || ep.episode_number || index + 1),
+          title: ep.title || ep.name || 'Episode ' + Number(ep.number || ep.episode || index + 1),
+          id: String(ep.id || ep.slug || ep.number || index + 1)
+        })) } } } };
+      }
+    } catch (error) {
+      console.warn('[koni-nime-api] ReAnime episodes failed; using AniList episode count:', error?.message || error);
+    }
+    // AniList supplies episode counts, not playable episode streams. This fallback keeps
+    // the episode list available while making no claim that playback sources are resolved.
+    if (!/^\\d+$/.test(String(id))) throw new Error('AniList episode fallback requires a numeric AniList media ID.');
+    const data = await anilist(
+      'query ($id: Int) { Media(id: $id, type: ANIME, isAdult: false) { id episodes title { userPreferred romaji english } } }',
+      { id: Number(id) }
+    );
+    const item = data?.Media;
+    const count = Math.max(0, Math.min(2000, Number(item?.episodes) || 0));
+    if (!count) throw new Error('AniList does not have an episode count for this anime.');
+    const title = item.title?.userPreferred || item.title?.romaji || item.title?.english || 'Anime';
+    return { providers: { anilist: { episodes: { sub: Array.from({ length: count }, (_, index) => ({
+      number: index + 1,
+      title: 'Episode ' + (index + 1),
+      id: 'anilist-' + id + '-episode-' + (index + 1),
+      animeTitle: title,
+      metadataOnly: true
     })) } } } };
   });
 }
