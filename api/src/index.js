@@ -282,4 +282,4 @@ app.use((error, _req, res, _next) => {
 });
 
 export { app };
-if (process.env.NODE_ENV !== 'test') app.listen(PORT, '0.0.0.0', () => console.log('Koni-Nime API listening on 0.0.0.0:' + PORT));
+if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) app.listen(PORT, '0.0.0.0', () => console.log('Koni-Nime API listening on 0.0.0.0:' + PORT));
