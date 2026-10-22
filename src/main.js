@@ -1,7 +1,7 @@
 import Hls from 'hls.js';
 import './styles.css';
 
-const DEFAULT_API = '';
+const DEFAULT_API = (import.meta.env.VITE_API_BASE_URL || '').trim().replace(/\/+$/, '');
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const state = { items: [], category: 'home', query: '', selected: null, episodes: [], activeEpisode: null, hls: null };
@@ -9,7 +9,7 @@ const read = (key, fallback) => { try { return JSON.parse(localStorage.getItem(k
 const write = (key, value) => localStorage.setItem(key, JSON.stringify(value));
 const library = () => read('koni-library', []);
 const history = () => read('koni-history', []);
-const apiBase = () => ($('#api-base')?.value || read('koni-api-base', DEFAULT_API)).trim().replace(/\/+$/, '');
+const apiBase = () => ($('#api-base')?.value || read('koni-api-base', DEFAULT_API) || DEFAULT_API).trim().replace(/\/+$/, '');
 const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pick = (obj, keys, fallback = '') => { for (const k of keys) if (obj?.[k] != null && obj[k] !== '') return obj[k]; return fallback; };
 const titleOf = item => typeof item?.title === 'string' ? item.title : pick(item?.title, ['english','userPreferred','romaji','native'], pick(item, ['name'], 'Untitled anime'));
@@ -39,7 +39,7 @@ function extractList(data) {
 }
 async function api(path, options = {}) {
   const base = apiBase();
-  if (!base) throw new Error('Set your deployed Kuhi API URL in Settings first. The GitHub repository is API source code, not a public server URL.');
+  if (!base) throw new Error('Kuhi API is not configured. Deploy the API service, or enter its public HTTPS URL in Settings.');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -65,7 +65,7 @@ function showView(view) {
   $('#player-section').hidden = view !== 'player';
   $('#search-panel').hidden = view !== 'search';
   $$('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.nav === view || (view === 'detail' && el.dataset.nav === 'home')));
-  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches || read('koni-reduce-motion', false) ? 'auto' : 'smooth' });
 }
 function card(item, index = 0) {
   const a = normalize(item);
@@ -75,12 +75,6 @@ function card(item, index = 0) {
     <span class="poster-wrap">${safeImage ? `<img loading="lazy" src="${esc(safeImage)}" alt="" onerror="this.style.display='none'">` : ''}<span class="poster-placeholder">✦</span><span class="poster-overlay"></span><span class="card-score">${a.score ? '★ ' + esc(Number(a.score) > 10 ? (Number(a.score)/10).toFixed(1) : a.score) : 'KONI PICK'}</span><span class="quick-save ${saved?'saved':''}" data-save-id="${esc(a.id)}" aria-label="Save to library">${saved?'♥':'♡'}</span></span>
     <span class="card-title">${esc(a.title)}</span><span class="card-meta">${esc(a.type)}${a.status ? ' · '+esc(a.status) : ''}</span>
   </button>`;
-}
-function renderGrid(items = state.items) {
-  const grid = $('#anime-grid');
-  grid.innerHTML = items.length ? items.map((item, i) => card(item, i)).join('') : '<div class="empty-state"><span>✦</span><h3>No titles found</h3><p>Try another search or check back later.</p></div>';
-  $$('.anime-card', grid).forEach((el, i) => el.addEventListener('click', e => { if (e.target.closest('[data-save-id]')) return; openDetails(items[i]); }));
-  $$('[data-save-id]', grid).forEach(el => el.addEventListener('click', e => { e.stopPropagation(); toggleSave(items.find(x => normalize(x).id === el.dataset.saveId)); renderGrid(items); }));
 }
 async function loadHome(category = 'home') {
   state.category = category;
@@ -92,10 +86,9 @@ async function loadHome(category = 'home') {
   const routes = { home:'/anime/spotlight', popular:'/anime/popular?page=1&per_page=24', recent:'/anime/recent?page=1&per_page=24' };
   try {
     const data = await api(routes[category] || routes.home);
-    const items = extractList(data);
-    state.items = items.map(normalize);
+    state.items = extractList(data).map(normalize);
     renderGrid(state.items);
-    setStatus(items.length ? `${items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
+    setStatus(state.items.length ? `${state.items.length} titles ready to explore` : 'The API returned no titles. Try search or reload later.');
   } catch (error) {
     $('#anime-grid').innerHTML = '<div class="empty-state"><span>⌁</span><h3>Catalog taking a breather</h3><p></p><button class="outline-btn" id="retry-load">Try again</button></div>';
     $('.empty-state p').textContent = error.message;
@@ -174,17 +167,18 @@ async function playEpisode(ep) {
     const sources = data?.streams || data?.data?.streams || [];
     const source = sources.find(s => s.url && (String(s.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(s.url))) || sources.find(s=>s.url && ['mp4','dash'].includes(String(s.type).toLowerCase()));
     if (!source) throw new Error('No playable stream was returned. Try another episode later.');
+    const sourceType = String(source.type || '').toLowerCase();
     let sourceUrl = source.url;
-    if (/\.m3u8(?:\?|$)/i.test(sourceUrl) && source.referer) {
-      sourceUrl = apiBase() + '/proxy_m3u8?url=' + encodeURIComponent(sourceUrl) + '&referer=' + encodeURIComponent(source.referer);
+    const referer = source.referer || source.headers?.Referer || source.headers?.referer || '';
+    if (/\.m3u8(?:\?|$)/i.test(sourceUrl) && referer) {
+      sourceUrl = apiBase() + '/proxy_m3u8?url=' + encodeURIComponent(sourceUrl) + '&referer=' + encodeURIComponent(referer);
     }
     $('#video-empty').hidden = true;
-    if (state.hls) { state.hls.destroy(); state.hls = null; }
-    if (String(source.type).toLowerCase()==='hls' || /\.m3u8(?:\?|$)/i.test(sourceUrl)) {
+    if (sourceType === 'hls' || /\.m3u8(?:\?|$)/i.test(sourceUrl)) {
       if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = sourceUrl;
       else if (Hls.isSupported()) { state.hls = new Hls(); state.hls.loadSource(sourceUrl); state.hls.attachMedia(video); }
       else throw new Error('This device cannot play this HLS stream.');
-    } else if (String(source.type).toLowerCase()==='embed') {
+    } else if (sourceType === 'embed') {
       throw new Error('This source is an embed and cannot play directly in the video player.');
     } else video.src = sourceUrl;
     write('koni-history', [{ anime: state.selected, episode: ep, watchedAt: Date.now() }, ...history().filter(x=>normalize(x.anime).id!==state.selected.id)].slice(0,20));
@@ -233,8 +227,9 @@ function bindEvents() {
   };
 }
 function init() {
-  $('#api-base').value = read('koni-api-base',DEFAULT_API);
+  $('#api-base').value = read('koni-api-base',DEFAULT_API) || DEFAULT_API;
   $('#reduce-motion').checked = read('koni-reduce-motion',false);
+  document.documentElement.classList.toggle('reduce-motion',$('#reduce-motion').checked);
   bindEvents(); renderContinue(); loadHome('home');
 }
 init();
