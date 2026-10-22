@@ -174,7 +174,7 @@ async function openDetails(item) {
   $('#detail-reanime').addEventListener('click', () => openReAnime(state.selected?.title || ''));
   $('#detail-save').addEventListener('click', () => { toggleSave(state.selected.raw || state.selected); $('#detail-save').textContent = library().some(x=>normalize(x).id===state.selected.id)?'♥ Saved':'♡ Add to list'; });
   try {
-    const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id));
+    const infoData = await api('/anime/info/' + encodeURIComponent(state.selected.id) + '?title=' + encodeURIComponent(state.selected.title));
     const info = infoData?.Media || infoData?.results?.Media || infoData?.results || infoData?.data?.Media || infoData?.data || infoData?.anime || infoData;
     const mergedInfo = { ...(state.selected.raw || {}), ...(info || {}), id: info?.slug || state.selected.id };
     state.selected = normalize(mergedInfo);
@@ -182,7 +182,7 @@ async function openDetails(item) {
       const synopsis = info?.description || info?.synopsis || info?.overview || info?.description?.english;
       if (typeof synopsis === 'string' && synopsis.trim()) state.selected.description = synopsis;
     }
-    const providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id));
+    const providerData = await api('/anime/episodes/' + encodeURIComponent(state.selected.id) + '?title=' + encodeURIComponent(state.selected.title));
     state.episodes = makeEpisodes(info, providerData);
     renderEpisodes();
     $('#detail-content .detail-copy h1').textContent = state.selected.title;
