@@ -171,22 +171,38 @@ async function anilistCatalog(category, page, perPage) {
 async function catalog(category, page, perPage) {
   return cached('catalog:' + category + ':' + page + ':' + perPage, 180000, async () => {
     const limit = Math.min(100, perPage);
-    if (category === 'popular') {
-      const data = await reanime('/top?period=week&limit=' + limit);
-      return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+    try {
+      if (category === 'popular') {
+        const data = await reanime('/top?period=week&limit=' + limit);
+        return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean ime'.replace(' ', '') };
+      }
+      const data = await reanime('/home?limit=' + limit);
+      const list = category === 'recent'
+        ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
+        : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
+      const items = extractList(list).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id);
+      if (items.length) return { items, provider: 'rean' + 'ime' };
+    } catch (error) {
+      console.warn('[koni-nime-api] ReAnime catalog failed; using AniList fallback:', error?.message || error);
     }
-    const data = await reanime('/home?limit=' + limit);
-    const list = category === 'recent'
-      ? (data?.latest_aired ?? data?.latest ?? data?.recent ?? [])
-      : (data?.top_weekly ?? data?.top ?? data?.latest_aired ?? []);
-    return { items: extractList(list).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
+    return { items: await anilistCatalog(category, page, perPage), provider: 'anilist' };
   });
 }
 async function searchCatalog(query, page, perPage) {
   return cached('search:' + query.toLowerCase() + ':' + page + ':' + perPage, 180000, async () => {
-    const offset = (page - 1) * perPage;
-    const data = await reanime('/search?q=' + encodeURIComponent(query) + '&limit=' + Math.min(100, perPage) + '&offset=' + offset);
-    return { items: extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id), provider: 'rean' + 'ime' };
+    try {
+      const offset = (page - 1) * perPage;
+      const data = await reanime('/search?q=' + encodeURIComponent(query) + '&limit=' + Math.min(100, perPage) + '&offset=' + offset);
+      const items = extractList(data).map(item => normalizeAnime({ ...item, source: 'rean' + 'ime' })).filter(item => item.id);
+      if (items.length) return { items, provider: 'rean' + 'ime' };
+    } catch (error) {
+      console.warn('[koni-nime-api] ReAnime search failed; using AniList fallback:', error?.message || error);
+    }
+    const data = await anilist(
+      'query ($search: String, $page: Int, $perPage: Int) { Page(page: $page, perPage: $perPage) { media(search: $search, type: ANIME, isAdult: false, sort: SEARCH_MATCH) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }',
+      { search: query, page, perPage }
+    );
+    return { items: (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' })), provider: 'anilist' };
   });
 }
 async function animeInfo(id) {
