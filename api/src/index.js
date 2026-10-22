@@ -175,6 +175,25 @@ function upstreamError(res, error, message) {
 function mediaQuery(sort) {
   return 'query ($page: Int, $perPage: Int, $sort: [MediaSort]) { Page(page: $page, perPage: $perPage) { media(type: ANIME, sort: $sort, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }';
 }
+const STATIC_CATALOG = [
+  { id: 'mal-21', title: { english: 'One Piece', userPreferred: 'One Piece' }, description: 'Monkey D. Luffy sets out on a grand adventure to find the legendary One Piece.', format: 'TV', genres: ['Action', 'Adventure', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-20', title: { english: 'Naruto', userPreferred: 'Naruto' }, description: 'A young ninja works toward his dream of becoming the strongest leader in his village.', format: 'TV', genres: ['Action', 'Adventure'], source: 'local-fallback' },
+  { id: 'mal-40748', title: { english: 'Jujutsu Kaisen', userPreferred: 'Jujutsu Kaisen' }, description: 'A student enters the dangerous world of curses after a fateful encounter.', format: 'TV', genres: ['Action', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-38000', title: { english: 'Demon Slayer: Kimetsu no Yaiba', userPreferred: 'Demon Slayer: Kimetsu no Yaiba' }, description: 'A young swordsman searches for a cure for his sister while battling demons.', format: 'TV', genres: ['Action', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-52991', title: { english: 'Frieren: Beyond Journey’s End', userPreferred: 'Frieren: Beyond Journey’s End' }, description: 'An elven mage reflects on friendship, time, and the meaning of a hero’s journey.', format: 'TV', genres: ['Adventure', 'Drama', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-52299', title: { english: 'Solo Leveling', userPreferred: 'Solo Leveling' }, description: 'A low-ranked hunter gains a mysterious power that lets him grow stronger.', format: 'TV', genres: ['Action', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-16498', title: { english: 'Attack on Titan', userPreferred: 'Attack on Titan' }, description: 'Humanity fights for survival behind enormous walls in a world threatened by Titans.', format: 'TV', genres: ['Action', 'Drama', 'Fantasy'], source: 'local-fallback' },
+  { id: 'mal-50265', title: { english: 'SPY x FAMILY', userPreferred: 'SPY x FAMILY' }, description: 'A spy, an assassin, and a telepath form an unusual family for a secret mission.', format: 'TV', genres: ['Action', 'Comedy'], source: 'local-fallback' },
+  { id: 'mal-44511', title: { english: 'Chainsaw Man', userPreferred: 'Chainsaw Man' }, description: 'A young devil hunter’s life changes after a dangerous supernatural pact.', format: 'TV', genres: ['Action', 'Fantasy', 'Horror'], source: 'local-fallback' },
+  { id: 'mal-5114', title: { english: 'Fullmetal Alchemist: Brotherhood', userPreferred: 'Fullmetal Alchemist: Brotherhood' }, description: 'Two brothers search for the philosopher’s stone after an alchemy experiment goes wrong.', format: 'TV', genres: ['Action', 'Adventure', 'Drama'], source: 'local-fallback' },
+  { id: 'mal-1535', title: { english: 'Death Note', userPreferred: 'Death Note' }, description: 'A gifted student discovers a notebook that can kill anyone whose name is written in it.', format: 'TV', genres: ['Mystery', 'Thriller', 'Supernatural'], source: 'local-fallback' },
+  { id: 'mal-31964', title: { english: 'My Hero Academia', userPreferred: 'My Hero Academia' }, description: 'A determined teenager pursues his dream of becoming a hero in a superpowered world.', format: 'TV', genres: ['Action', 'Adventure'], source: 'local-fallback' }
+];
+function staticCatalog(category, page, perPage) {
+  const start = Math.max(0, (page - 1) * perPage);
+  const sorted = category === 'recent' ? [...STATIC_CATALOG].reverse() : STATIC_CATALOG;
+  return sorted.slice(start, start + Math.min(24, perPage)).map(item => normalizeAnime(item));
+}
 async function anilistCatalog(category, page, perPage) {
   const sort = category === 'popular' ? 'POPULARITY_DESC' : category === 'recent' ? 'UPDATED_AT_DESC' : 'TRENDING_DESC';
   const data = await anilist(mediaQuery(sort), { page, perPage, sort: [sort] });
@@ -228,9 +247,15 @@ async function catalog(category, page, perPage) {
     } catch (error) {
       console.warn('[koni-nime-api] AniList catalog failed; trying Jikan:', error?.message || error);
     }
-    const items = await jikanCatalog(category, page, perPage);
-    if (items.length) return { items, provider: 'jikan' };
-    throw new Error('ReAnime, AniList and Jikan returned no catalog items.');
+    try {
+      const items = await jikanCatalog(category, page, perPage);
+      if (items.length) return { items, provider: 'jikan' };
+    } catch (error) {
+      console.warn('[koni-nime-api] Jikan catalog failed; using built-in safety catalog:', error?.message || error);
+    }
+    const items = staticCatalog(category, page, perPage);
+    if (items.length) return { items, provider: 'local-fallback' };
+    throw new Error('No catalog entries are available.');
   });
 }
 async function searchCatalog(query, page, perPage) {
@@ -253,10 +278,18 @@ async function searchCatalog(query, page, perPage) {
     } catch (error) {
       console.warn('[koni-nime-api] AniList search failed; trying Jikan:', error?.message || error);
     }
-    const data = await fetchJson('https://api.jikan.moe/v4/anime?q=' + encodeURIComponent(query) + '&page=' + page + '&limit=' + Math.min(25, perPage) + '&sfw=true', {
-      headers: { 'User-Agent': 'Koni-Nime/1.0 (anime search fallback)' }
-    });
-    return { items: (Array.isArray(data?.data) ? data.data : []).map(normalizeJikanAnime).filter(item => item.id), provider: 'jikan' };
+    try {
+      const data = await fetchJson('https://api.jikan.moe/v4/anime?q=' + encodeURIComponent(query) + '&page=' + page + '&limit=' + Math.min(25, perPage) + '&sfw=true', {
+        headers: { 'User-Agent': 'Koni-Nime/1.0 (anime search fallback)' }
+      });
+      const items = (Array.isArray(data?.data) ? data.data : []).map(normalizeJikanAnime).filter(item => item.id);
+      if (items.length) return { items, provider: 'jikan' };
+    } catch (error) {
+      console.warn('[koni-nime-api] Jikan search failed; using built-in safety catalog:', error?.message || error);
+    }
+    const needle = query.toLowerCase();
+    const items = STATIC_CATALOG.filter(item => [item.title?.english, item.title?.userPreferred, ...(item.genres || [])].some(value => String(value || '').toLowerCase().includes(needle))).map(normalizeAnime);
+    return { items: items.slice(0, Math.min(24, perPage)), provider: 'local-fallback' };
   });
 }
 async function findAniListByTitle(title) {
