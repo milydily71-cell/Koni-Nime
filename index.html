@@ -15,7 +15,7 @@
       <a class="brand" href="#" data-nav="home" aria-label="Koni-Nime home"><span class="brand-mark">K</span><span>KONI<span class="brand-accent">NIME</span></span></a>
       <div class="top-actions">
         <button class="icon-btn" id="open-search" aria-label="Search anime">⌕</button>
-        <button class="avatar" id="open-library" aria-label="Open library">✦</button>
+        <button class="avatar" id="open-account" aria-label="Open account">U</button>
       </div>
     </header>
     <main>
@@ -31,7 +31,7 @@
       </section>
       <section class="search-panel" id="search-panel" hidden>
         <div class="search-input-wrap"><span>⌕</span><input id="search-input" type="search" placeholder="Search anime titles..." autocomplete="off"/><button id="clear-search" aria-label="Clear search">×</button></div>
-        <p class="helper-text">Search the Kuhi anime catalog</p>
+        <p class="helper-text">Search across anime titles, seasons, and favorites.</p>
       </section>
       <section class="section" id="continue-section" hidden>
         <div class="section-head"><div><span class="kicker">PICK UP WHERE YOU LEFT OFF</span><h2>Continue watching</h2></div></div>
@@ -41,7 +41,7 @@
         <div class="section-head"><div><span class="kicker">HANDPICKED FOR YOU</span><h2 id="catalog-title">Trending now <span class="title-spark">✦</span></h2></div><button class="text-btn" id="see-all">See all <span>↗</span></button></div>
         <div class="chips" id="category-chips"><button class="chip active" data-category="home">For you</button><button class="chip" data-category="popular">Popular</button><button class="chip" data-category="recent">Latest anime</button><button class="chip" data-category="library">My list</button></div>
         <div class="poster-grid" id="anime-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
-        <div class="status-line" id="status-line" role="status">Connect your Kuhi API server in Settings…</div>
+        <div class="status-line" id="status-line" role="status">Loading anime collection…</div>
       </section>
       <section class="section" id="detail-section" hidden>
         <button class="back-btn" id="back-catalog">← Back to discovery</button><div id="detail-content"></div>
@@ -49,15 +49,17 @@
       <section class="section library-section" id="library-section" hidden>
         <div class="section-head"><div><span class="kicker">YOUR PERSONAL COLLECTION</span><h2>My library</h2></div></div><div id="library-content"></div>
       </section>
+      <section class="section downloads-section" id="downloads-section" hidden><div class="section-head"><div><span class="kicker">OFFLINE COLLECTION</span><h2>Downloads</h2></div></div><div id="downloads-content"></div></section>
+      <section class="section account-section" id="account-section" hidden><div class="account-hero"><div class="account-avatar" id="account-avatar">U</div><div><span class="kicker">YOUR KONI PROFILE</span><h1 id="account-name">Anime fan</h1><p class="muted" id="account-email">Your personal anime space</p></div></div><div class="account-stats" id="account-stats"></div><div class="account-actions"><button class="primary-btn" id="edit-account">Edit profile</button><button class="glass-btn" id="account-settings">Preferences</button></div><div class="section-head"><div><span class="kicker">YOUR JOURNEY</span><h2>Continue watching</h2></div></div><div class="poster-row account-history" id="account-history"></div><p class="account-note">Your profile, watchlist, and watch progress are currently saved on this device. Account sync across devices requires a secure account service.</p></section>
       <section class="section player-section" id="player-section" hidden>
         <button class="back-btn" id="back-detail">← Back to anime</button>
         <div class="video-frame"><video id="video-player" controls playsinline crossorigin="anonymous"></video><iframe id="embed-player" title="Aniweeb anime player" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe><div class="video-empty" id="video-empty">Choose an episode to start watching.</div></div><div id="player-info"></div>
       </section>
-      <section class="api-note"><span class="api-pulse"></span><div><strong>Powered by Kuhi API</strong><p>Connect your own deployed API server in Settings.</p></div><a href="https://github.com/aryaniiil/anime-api" target="_blank" rel="noreferrer">API source ↗</a></section>
-    </main>
-    <nav class="bottom-nav" aria-label="Main navigation"><button class="nav-item active" data-nav="home"><span>⌂</span>Home</button><button class="nav-item" data-nav="search"><span>⌕</span>Search</button><button class="nav-item" data-nav="library"><span>♡</span>My list</button><button class="nav-item" data-nav="settings"><span>⚙</span>Settings</button></nav>
+      </main>
+    <nav class="bottom-nav" aria-label="Main navigation"><button class="nav-item active" data-nav="home"><span>⌂</span>Home</button><button class="nav-item" data-nav="search"><span>⌕</span>Explore</button><button class="nav-item" data-nav="library"><span>♡</span>My list</button><button class="nav-item" data-nav="downloads"><span>⇩</span>Downloads</button><button class="nav-item" data-nav="account"><span>◉</span>Account</button></nav>
     <div class="toast" id="toast" role="status"></div>
   </div>
-  <dialog id="settings-dialog" class="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button><span class="kicker">PREFERENCES</span><h2>Made for your anime era.</h2><p class="muted">Watchlist and history stay on this device. Enter the public URL of your deployed Kuhi API server below.</p><label class="setting-row"><span><strong>Reduce motion</strong><small>Keep transitions subtle</small></span><input id="reduce-motion" type="checkbox"/></label><label class="setting-row"><span><strong>Kuhi API base URL</strong><small>Example: https://your-api.example.com</small></span><input id="api-base" type="url" placeholder="https://your-deployed-api.example.com"/></label><button class="primary-btn save-settings" id="save-settings" type="button">Save preferences</button></form></dialog>
+  <dialog id="settings-dialog" class="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button><span class="kicker">YOUR EXPERIENCE</span><h2>Make it yours.</h2><p class="muted">Tune the way Koni-Nime looks and feels.</p><label class="setting-row"><span><strong>Reduce motion</strong><small>Keep transitions subtle</small></span><input id="reduce-motion" type="checkbox"/></label><label class="setting-row"><span><strong>Catalog density</strong><small>More anime on each screen</small></span><select id="catalog-density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select></label><label class="setting-row"><span><strong>Preferred audio</strong><small>Used when choosing episodes</small></span><select id="preferred-audio"><option value="sub">Sub</option><option value="dub">Dub</option></select></label><button class="primary-btn save-settings" id="save-settings" type="button">Save preferences</button></form></dialog>
+  <dialog id="account-dialog" class="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button><span class="kicker">PROFILE</span><h2>Your anime space.</h2><p class="muted">Set a profile name for this device.</p><label class="profile-field"><span>Display name</span><input id="profile-name-input" maxlength="40" placeholder="Anime fan"/></label><label class="profile-field"><span>Email (optional)</span><input id="profile-email-input" type="email" maxlength="120" placeholder="you@example.com"/></label><p class="account-note">This is a local profile, not a secure sign-in. Don't enter a password. Cloud account sync isn't configured yet.</p><button class="primary-btn save-settings" id="save-account" type="button">Save profile</button></form></dialog>
 </body>
 </html>
