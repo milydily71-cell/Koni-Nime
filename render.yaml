@@ -5,6 +5,18 @@ services:
     plan: free
     dockerfilePath: ./deploy/api.Dockerfile
     dockerContext: .
+    healthCheckPath: /v1/health
+    autoDeploy: true
+    envVars:
+      - key: REANIME_API_BASE
+        value: https://koni-nime-reanime.onrender.com
+
+  - type: web
+    name: koni-nime-reanime
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/reanime.Dockerfile
+    dockerContext: .
     healthCheckPath: /
     autoDeploy: true
 
