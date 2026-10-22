@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b0a12" />
+  <meta name="description" content="Discover your next anime with Koni-Nime." />
+  <title>Koni-Nime — Anime for your next chapter</title>
+  <link rel="preconnect" href="https://api.tatakai.me" />
+  <link rel="stylesheet" href="/src/styles.css" />
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" data-nav="home" aria-label="Koni-Nime home"><span class="brand-mark">K</span><span>KONI<span class="brand-accent">NIME</span></span></a>
+      <div class="top-actions">
+        <button class="icon-btn" id="open-search" aria-label="Search anime">⌕</button>
+        <button class="avatar" id="open-library" aria-label="Open library">✦</button>
+      </div>
+    </header>
+    <main>
+      <section class="hero" id="hero">
+        <div class="hero-art"></div>
+        <div class="hero-content">
+          <span class="eyebrow"><span class="live-dot"></span> YOUR NEXT OBSESSION</span>
+          <h1>Stories that<br/><span>stay with you.</span></h1>
+          <p>Find a new world to fall into.</p>
+          <div class="hero-actions"><button class="primary-btn" id="explore-btn">Explore anime <span>↗</span></button><button class="glass-btn" id="surprise-btn">✦ Surprise me</button></div>
+        </div>
+        <div class="hero-foot"><span class="hero-tag">DISCOVER · WATCH · REPEAT</span><span class="hero-index">01 <i></i> 04</span></div>
+      </section>
+
+      <section class="search-panel" id="search-panel" hidden>
+        <div class="search-input-wrap"><span>⌕</span><input id="search-input" type="search" placeholder="Search anime titles..." autocomplete="off"/><button id="clear-search" aria-label="Clear search">×</button></div>
+        <p class="helper-text">Search the Tatakai anime catalog</p>
+      </section>
+
+      <section class="section" id="continue-section" hidden>
+        <div class="section-head"><div><span class="kicker">PICK UP WHERE YOU LEFT OFF</span><h2>Continue watching</h2></div></div>
+        <div class="poster-row" id="continue-row"></div>
+      </section>
+
+      <section class="section" id="trending-section">
+        <div class="section-head"><div><span class="kicker">HANDPICKED FOR YOU</span><h2 id="catalog-title">Trending now <span class="title-spark">✦</span></h2></div><button class="text-btn" id="see-all">See all <span>↗</span></button></div>
+        <div class="chips" id="category-chips"><button class="chip active" data-category="home">For you</button><button class="chip" data-category="popular">Popular</button><button class="chip" data-category="recent">Latest episodes</button><button class="chip" data-category="library">My list</button></div>
+        <div class="poster-grid" id="anime-grid"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
+        <div class="status-line" id="status-line" role="status">Connecting to anime catalog…</div>
+      </section>
+
+      <section class="section" id="detail-section" hidden>
+        <button class="back-btn" id="back-catalog">← Back to discovery</button>
+        <div id="detail-content"></div>
+      </section>
+
+      <section class="section library-section" id="library-section" hidden>
+        <div class="section-head"><div><span class="kicker">YOUR PERSONAL COLLECTION</span><h2>My library</h2></div></div>
+        <div id="library-content"></div>
+      </section>
+
+      <section class="section player-section" id="player-section" hidden>
+        <button class="back-btn" id="back-detail">← Back to anime</button>
+        <div class="video-frame"><video id="video-player" controls playsinline crossorigin="anonymous"></video><div class="video-empty" id="video-empty">Choose an episode to start watching.</div></div>
+        <div id="player-info"></div>
+      </section>
+
+      <section class="api-note"><span class="api-pulse"></span><div><strong>Powered by Tatakai API</strong><p>Catalog availability depends on the upstream provider.</p></div><a href="https://api.tatakai.me/docs" target="_blank" rel="noreferrer">API docs ↗</a></section>
+    </main>
+    <nav class="bottom-nav" aria-label="Main navigation"><button class="nav-item active" data-nav="home"><span>⌂</span>Home</button><button class="nav-item" data-nav="search"><span>⌕</span>Search</button><button class="nav-item" data-nav="library"><span>♡</span>My list</button><button class="nav-item" data-nav="settings"><span>⚙</span>Settings</button></nav>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+  <dialog id="settings-dialog" class="settings-dialog"><form method="dialog"><button class="dialog-close" aria-label="Close">×</button><span class="kicker">PREFERENCES</span><h2>Made for your anime era.</h2><p class="muted">Koni-Nime stores your watchlist and history locally on this device.</p><label class="setting-row"><span><strong>Reduce motion</strong><small>Keep transitions subtle</small></span><input id="reduce-motion" type="checkbox"/></label><label class="setting-row"><span><strong>API base URL</strong><small>Default: https://api.tatakai.me</small></span><input id="api-base" type="url" value="https://api.tatakai.me"/></label><button class="primary-btn save-settings" id="save-settings" type="button">Save preferences</button></form></dialog>
+</body>
+</html>
