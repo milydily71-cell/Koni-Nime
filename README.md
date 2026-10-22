@@ -3,44 +3,50 @@
 A mobile-first anime discovery and watch interface with a cinematic dark violet theme, built with Vite and Capacitor for Android.
 
 ## Features
-- Home discovery using Kuhi API spotlight, popular and recent endpoints
-- Search using the Kuhi API
-- AniList-backed anime details and episode list
-- HLS/MP4 playback using the API's stream extraction endpoint when a compatible stream is available
+
+- Koni-Nime's own Node.js + Express API, with stable versioned and backwards-compatible routes for the current web/APK client
+- AniList and Miruro metadata adapters with normalized synopsis, posters, genres and ratings
+- Episode discovery, provider episode deduplication and playback-source resolution through the configured Miruro adapter
+- In-memory response caching, concurrent cache-miss coalescing, upstream timeouts, input validation, rate limiting and structured JSON errors
+- HLS/MP4 playback when a compatible, authorized stream is available
 - Local watchlist and recently watched history
-- Configurable Kuhi API base URL, loading/error states, and retry controls
-- GitHub Actions workflow for installable Android debug APK artifacts
-- Render Blueprint for deploying the web frontend and a Kuhi API service
+- Configurable API base URL, loading/error states and retry controls
+- GitHub Actions workflows for API tests and installable Android debug APK artifacts
+- Render Blueprint for deploying the frontend and owned API service
 
-## Run locally
-Requires Node.js 20+ and npm.
+## Run the API locally
 
-```sh
-npm install
-npm run dev
-```
+Requires Node.js 20+. Run from the repository root:
+
+    cd api
+    npm install
+    npm test
+    npm start
+
+The API listens on port 8000 by default. For the Vite frontend, return to the repository root and run npm install and npm run dev.
 
 ## Build Android APK locally
-```sh
-npm install
-npm run build
-npx cap add android
-npx cap sync android
-cd android
-./gradlew assembleDebug
-```
+
+    npm install
+    npm run build
+    npx cap sync android
+    cd android
+    ./gradlew assembleDebug
 
 ## Deploy frontend and API
 
-A Render deployment blueprint is included at [render.yaml](render.yaml). Follow [the deployment guide](docs/DEPLOYMENT.md) to create the static frontend and API service. Creating the blueprint in Render requires a Render account and authorization to connect this GitHub repository; the presence of the blueprint does not mean the services are already deployed.
+The Render Blueprint is in render.yaml. See docs/DEPLOYMENT.md. The API is built from this repository's api/ source through deploy/api.Dockerfile; it no longer clones the Kuhi API repository at build time.
 
-The Android APK workflow runs on pushes to `main`. When it succeeds, download the `Koni-Nime-debug-apk` artifact from [GitHub Actions](https://github.com/milydily71-cell/Koni-Nime/actions). It is a debug-signed test APK, not a Play Store release.
+The Android APK workflow creates a debug-signed test APK. It is not a Play Store release.
 
-## API setup
+## API
 
-Koni-Nime targets the FastAPI project at [aryaniiil/anime-api](https://github.com/aryaniiil/anime-api), which exposes endpoints such as `/anime/spotlight`, `/anime/search?query=...`, `/anime/info/{anilist_id}`, `/anime/episodes/{anilist_id}`, and `/anime/extract/{query}?e=1&type=sub`.
+- Health: GET /v1/health
+- Catalog: GET /v1/anime/popular, GET /v1/anime/recent
+- Search: GET /v1/anime/search?q=naruto
+- Details: GET /v1/anime/:id
+- Episodes: GET /v1/anime/:id/episodes
+- Playback sources: GET /v1/episodes/:id/servers?animeId=20&episode=1
+- Compatibility routes: /anime/spotlight, /anime/popular, /anime/recent, /anime/search, /anime/info/:id, /anime/episodes/:id, /anime/extract/:id
 
-The upstream repository is source code, not a confirmed public API base URL. If you are not using the Render blueprint, deploy or run the API server first, then open Koni-Nime → Settings and enter its public HTTPS base URL (without a trailing slash). The server must be reachable from the Android device and allow CORS requests from the app's origin. For local testing, use a LAN-reachable host address on a physical Android device.
-
-## Attribution, privacy and legal
-The upstream API project describes itself as experimental and does not guarantee uptime or data accuracy. Koni-Nime does not host anime video content. Source availability and playback compatibility depend on the configured server and third-party providers. Only access or stream content you are authorized to view.
+The API normalizes third-party metadata and resolves episode/source information when the configured provider is reachable. It does not host video content or guarantee third-party uptime. Only access or stream content you are authorized to view.

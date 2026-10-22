@@ -1,0 +1,29 @@
+name: Koni-Nime API tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'deploy/api.Dockerfile'
+      - '.github/workflows/api-tests.yml'
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'deploy/api.Dockerfile'
+      - '.github/workflows/api-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - run: npm test

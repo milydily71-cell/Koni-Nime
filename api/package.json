@@ -1,0 +1,10 @@
+{
+  "name": "koni-nime-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Koni-Nime's own anime metadata, episode discovery and playback resolver API",
+  "engines": { "node": ">=20" },
+  "scripts": { "start": "node src/index.js", "test": "node --test" },
+  "dependencies": { "express": "^5.1.0" }
+}

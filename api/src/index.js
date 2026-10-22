@@ -1,0 +1,285 @@
+import express from 'express';
+
+const app = express();
+const PORT = Number(process.env.PORT) || 8000;
+const MIRURO_BASE = (process.env.MIRURO_API_BASE || 'https://mirurotvapi.vercel.app/api').replace(/\/+$/, '');
+const ANILIST_URL = process.env.ANILIST_API_URL || 'https://graphql.anilist.co';
+const TIMEOUT_MS = Math.max(3000, Number(process.env.UPSTREAM_TIMEOUT_MS) || 12000);
+const RATE_WINDOW = Math.max(10000, Number(process.env.RATE_LIMIT_WINDOW_MS) || 60000);
+const RATE_MAX = Math.max(10, Number(process.env.RATE_LIMIT_MAX) || 120);
+const cache = new Map();
+const pending = new Map();
+const rates = new Map();
+const CACHE_LIMIT = 500;
+
+app.disable('x-powered-by');
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowed = process.env.CORS_ORIGIN || '*';
+  if (allowed === '*' || !origin || origin === allowed) res.setHeader('Access-Control-Allow-Origin', allowed === '*' ? '*' : allowed);
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  res.setHeader('Vary', 'Origin');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+app.use((req, res, next) => {
+  const key = req.ip || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  let record = rates.get(key);
+  if (!record || now >= record.resetAt) {
+    record = { count: 0, resetAt: now + RATE_WINDOW };
+    rates.set(key, record);
+  }
+  record.count += 1;
+  if (record.count > RATE_MAX) {
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil((record.resetAt - now) / 1000))));
+    return res.status(429).json({ success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests. Retry shortly.' } });
+  }
+  if (rates.size > 5000) for (const [ip, entry] of rates) if (entry.resetAt <= now) rates.delete(ip);
+  next();
+});
+app.use(express.json({ limit: '32kb' }));
+
+export function normalizeAnime(item = {}) {
+  const title = item.title && typeof item.title === 'object' ? item.title : {};
+  const cover = item.coverImage && typeof item.coverImage === 'object' ? item.coverImage : {};
+  const desc = item.description || item.synopsis || item.overview || item.summary || '';
+  const clean = value => typeof value === 'string' ? value.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#039;|&#39;/g, "'").trim() : '';
+  const first = (...values) => values.find(value => value !== undefined && value !== null && value !== '');
+  return {
+    id: String(first(item.id, item.anilistId, item.anilist_id, item.mal_id, item.slug, '')),
+    title: first(typeof item.title === 'string' ? item.title : '', title.english, title.userPreferred, title.romaji, title.native, item.name, item.romajiTitle, 'Untitled anime'),
+    image: first(cover.extraLarge, cover.large, item.poster, item.image, item.cover, item.thumbnail, item.posterUrl, ''),
+    banner: first(item.bannerImage, item.banner, item.backdrop, ''),
+    description: clean(typeof desc === 'string' ? desc : desc?.english || desc?.romaji || ''),
+    type: first(item.format, item.type, 'ANIME'),
+    status: first(item.status, item.airingStatus, ''),
+    score: first(item.averageScore, item.meanScore, item.rating, item.score, ''),
+    genres: Array.isArray(item.genres) ? item.genres.map(value => typeof value === 'string' ? value : value?.name).filter(Boolean) : [],
+    episodes: Number(first(item.episodes, item.episodeCount, 0)) || 0,
+    year: first(item.seasonYear, item.year, item.releaseYear, null),
+    source: item.source || 'unknown',
+    raw: item
+  };
+}
+
+export function episodeEntries(data) {
+  const providers = data?.providers || data?.results?.providers || data?.data?.providers || {};
+  const episodes = [];
+  for (const [providerName, provider] of Object.entries(providers)) {
+    for (const [audio, list] of Object.entries(provider?.episodes || {})) {
+      if (!Array.isArray(list)) continue;
+      for (const ep of list) {
+        const number = Number(ep?.number || ep?.episode || 0);
+        if (!number) continue;
+        episodes.push({ id: String(ep.id || providerName + '-' + number), number, title: ep.title || 'Episode ' + number, provider: providerName, audio, watchPath: typeof ep.id === 'string' && ep.id.startsWith('watch/') ? ep.id : null });
+      }
+    }
+  }
+  const seen = new Set();
+  return episodes.sort((a, b) => a.number - b.number || a.provider.localeCompare(b.provider)).filter(ep => {
+    const key = ep.audio + ':' + ep.number;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function normalizeStreams(data) {
+  const streams = data?.streams || data?.results?.streams || data?.data?.streams || data?.sources || data?.results?.sources || [];
+  if (!Array.isArray(streams)) return [];
+  return streams.filter(item => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url)).map(item => ({
+    url: item.url,
+    type: String(item.type || (/\.m3u8(?:\?|$)/i.test(item.url) ? 'hls' : 'mp4')).toLowerCase(),
+    quality: item.quality || item.label || null,
+    provider: item.provider || item.name || null,
+    referer: item.referer || item.headers?.Referer || item.headers?.referer || null
+  }));
+}
+
+export async function cached(key, ttlMs, loader) {
+  const entry = cache.get(key);
+  if (entry && entry.expiresAt > Date.now()) return entry.value;
+  if (pending.has(key)) return pending.get(key);
+  const task = (async () => {
+    const value = await loader();
+    if (cache.size >= CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    cache.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return value;
+  })();
+  pending.set(key, task);
+  try { return await task; } finally { pending.delete(key); }
+}
+
+async function fetchJson(url, options = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal, headers: { Accept: 'application/json', ...(options.headers || {}) } });
+    if (!response.ok) throw new Error('Upstream returned HTTP ' + response.status);
+    return await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('Upstream request timed out');
+    throw error;
+  } finally { clearTimeout(timer); }
+}
+async function miruro(path) { return fetchJson(MIRURO_BASE + path); }
+async function anilist(query, variables) {
+  const result = await fetchJson(ANILIST_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }) });
+  if (result.errors?.length) throw new Error(result.errors[0].message || 'AniList GraphQL error');
+  return result.data;
+}
+function unwrap(data) {
+  return data?.results?.Media || data?.Media || data?.results?.data || data?.results || data?.data?.Media || data?.data || data?.anime || data;
+}
+function extractList(data) {
+  if (Array.isArray(data)) return data;
+  const queue = [data], seen = new Set();
+  const keys = ['results', 'media', 'animes', 'anime', 'trending', 'popular', 'latest', 'items', 'list', 'data', 'Page'];
+  while (queue.length) {
+    const node = queue.shift();
+    if (!node || typeof node !== 'object' || seen.has(node)) continue;
+    seen.add(node);
+    if (Array.isArray(node)) return node;
+    for (const key of keys) {
+      const value = node[key];
+      if (Array.isArray(value)) return value;
+      if (value && typeof value === 'object') queue.push(value);
+    }
+  }
+  return [];
+}
+function validId(value) { return typeof value === 'string' && value.length > 0 && value.length <= 100 && /^[a-zA-Z0-9_-]+$/.test(value); }
+function pageParams(req) {
+  return { page: Math.max(1, Math.min(1000, parseInt(req.query.page, 10) || 1)), perPage: Math.max(1, Math.min(50, parseInt(req.query.per_page, 10) || 24)) };
+}
+function ok(res, results, extra = {}) { return res.json({ success: true, results, ...extra }); }
+function bad(res, message) { return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message } }); }
+function upstreamError(res, error, message) {
+  console.warn('[koni-nime-api]', error?.message || error);
+  return res.status(502).json({ success: false, error: { code: 'UPSTREAM_UNAVAILABLE', message, ...(process.env.NODE_ENV === 'production' ? {} : { detail: error?.message }) } });
+}
+function mediaQuery(sort) {
+  return 'query ($page: Int, $perPage: Int, $sort: [MediaSort]) { Page(page: $page, perPage: $perPage) { media(type: ANIME, sort: $sort, isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }';
+}
+async function anilistCatalog(category, page, perPage) {
+  const sort = category === 'popular' ? 'POPULARITY_DESC' : category === 'recent' ? 'UPDATED_AT_DESC' : 'TRENDING_DESC';
+  const data = await anilist(mediaQuery(sort), { page, perPage, sort: [sort] });
+  return (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' }));
+}
+async function catalog(category, page, perPage) {
+  return cached('catalog:' + category + ':' + page + ':' + perPage, 300000, async () => {
+    try {
+      const endpoint = category === 'popular' ? '/popular' : category === 'recent' ? '/recent' : '/spotlight';
+      const data = await miruro(endpoint + '?page=' + page + '&per_page=' + perPage);
+      const list = extractList(data).map(item => normalizeAnime({ ...item, source: 'miruro' })).filter(item => item.id);
+      if (list.length) return { items: list, provider: 'miruro' };
+    } catch {}
+    return { items: await anilistCatalog(category, page, perPage), provider: 'anilist' };
+  });
+}
+async function searchCatalog(query, page, perPage) {
+  return cached('search:' + query.toLowerCase() + ':' + page + ':' + perPage, 300000, async () => {
+    try {
+      const data = await miruro('/search?query=' + encodeURIComponent(query) + '&page=' + page + '&per_page=' + perPage);
+      const list = extractList(data).map(item => normalizeAnime({ ...item, source: 'miruro' })).filter(item => item.id);
+      if (list.length) return { items: list, provider: 'miruro' };
+    } catch {}
+    const queryText = 'query ($search: String, $page: Int, $perPage: Int) { Page(page: $page, perPage: $perPage) { media(type: ANIME, search: $search, sort: [SEARCH_MATCH], isAdult: false) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } } }';
+    const data = await anilist(queryText, { search: query, page, perPage });
+    return { items: (data?.Page?.media || []).map(item => normalizeAnime({ ...item, source: 'anilist' })), provider: 'anilist' };
+  });
+}
+async function animeInfo(id) {
+  return cached('info:' + id, 1800000, async () => {
+    if (/^\d+$/.test(id)) {
+      const query = 'query ($id: Int) { Media(id: $id, type: ANIME) { id idMal title { romaji english native userPreferred } coverImage { extraLarge large } bannerImage description format status episodes averageScore genres seasonYear } }';
+      try {
+        const data = await anilist(query, { id: Number(id) });
+        if (data?.Media) return normalizeAnime({ ...data.Media, source: 'anilist' });
+      } catch {}
+    }
+    const data = await miruro('/info/' + encodeURIComponent(id));
+    const item = unwrap(data);
+    if (!item || typeof item !== 'object') return null;
+    return normalizeAnime({ ...item, source: 'miruro' });
+  });
+}
+async function episodeData(id) { return cached('episodes:' + id, 180000, () => miruro('/episodes/' + encodeURIComponent(id))); }
+async function resolveSource(id, episode, provider, category) {
+  const key = 'stream:' + id + ':' + episode + ':' + provider + ':' + category;
+  return cached(key, 60000, () => miruro('/watch/' + encodeURIComponent(provider) + '/' + encodeURIComponent(id) + '/' + encodeURIComponent(category) + '/animepahe-' + encodeURIComponent(episode)));
+}
+
+app.get('/', (_req, res) => res.json({ name: 'Koni-Nime API', version: '1.0.0', status: 'ok', docs: '/v1/health' }));
+app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', timestamp: new Date().toISOString() }));
+app.get('/v1/health', (_req, res) => res.json({ status: 'ok', service: 'koni-nime-api', version: '1.0.0', providers: { metadata: ['miruro', 'anilist'], episodeSources: ['miruro'] }, cacheEntries: cache.size, inFlight: pending.size, uptimeSeconds: Math.floor(process.uptime()) }));
+
+async function sendCatalog(category, req, res) {
+  const { page, perPage } = pageParams(req);
+  try { const result = await catalog(category, page, perPage); return ok(res, result.items, { provider: result.provider, page, perPage }); }
+  catch (error) { return upstreamError(res, error, 'Anime catalog sources are unavailable.'); }
+}
+app.get('/anime/spotlight', (req, res) => sendCatalog('home', req, res));
+app.get('/anime/popular', (req, res) => sendCatalog('popular', req, res));
+app.get('/anime/recent', (req, res) => sendCatalog('recent', req, res));
+app.get('/v1/anime/popular', (req, res) => sendCatalog('popular', req, res));
+app.get('/v1/anime/recent', (req, res) => sendCatalog('recent', req, res));
+
+async function sendSearch(req, res) {
+  const query = String(req.query.q || req.query.query || '').trim();
+  if (!query || query.length > 100) return bad(res, 'Provide a search query between 1 and 100 characters.');
+  const { page, perPage } = pageParams(req);
+  try { const result = await searchCatalog(query, page, perPage); return ok(res, result.items, { provider: result.provider, page, perPage }); }
+  catch (error) { return upstreamError(res, error, 'Anime search providers are unavailable.'); }
+}
+app.get('/anime/search', sendSearch);
+app.get('/v1/anime/search', sendSearch);
+
+async function sendInfo(req, res) {
+  if (!validId(req.params.id)) return bad(res, 'Invalid anime ID.');
+  try {
+    const item = await animeInfo(req.params.id);
+    if (!item) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Anime not found.' } });
+    return ok(res, item, { provider: item.source || 'unknown' });
+  } catch (error) { return upstreamError(res, error, 'Anime details and synopsis are unavailable.'); }
+}
+app.get('/anime/info/:id', sendInfo);
+app.get('/v1/anime/:id', sendInfo);
+
+async function sendEpisodes(req, res, versioned = false) {
+  if (!validId(req.params.id)) return bad(res, 'Invalid anime ID.');
+  try {
+    const raw = await episodeData(req.params.id);
+    return versioned ? ok(res, episodeEntries(raw), { animeId: req.params.id, provider: 'miruro', raw }) : ok(res, raw, { provider: 'miruro' });
+  } catch (error) { return upstreamError(res, error, 'Episode listings are unavailable from the configured provider.'); }
+}
+app.get('/anime/episodes/:id', (req, res) => sendEpisodes(req, res, false));
+app.get('/v1/anime/:id/episodes', (req, res) => sendEpisodes(req, res, true));
+
+async function sendStreams(req, res, animeId) {
+  if (!validId(animeId)) return bad(res, 'animeId is required and must be a valid anime ID.');
+  const episode = parseInt(req.query.e || req.query.episode, 10);
+  if (!Number.isInteger(episode) || episode < 1 || episode > 2000) return bad(res, 'episode must be between 1 and 2000.');
+  const category = String(req.query.type || req.query.category || 'sub').toLowerCase();
+  const provider = String(req.query.provider || 'kiwi').toLowerCase();
+  if (!['sub', 'dub', 'raw'].includes(category) || !/^[a-z0-9_-]{1,40}$/.test(provider)) return bad(res, 'Invalid category or provider.');
+  try {
+    const data = await resolveSource(animeId, episode, provider, category);
+    const streams = normalizeStreams(data);
+    return ok(res, { animeId, episode, category, provider, streams }, { streams });
+  } catch (error) { return upstreamError(res, error, 'Playback sources could not be resolved for this episode.'); }
+}
+app.get('/anime/extract/:id', (req, res) => sendStreams(req, res, req.params.id));
+app.get('/v1/episodes/:id/servers', (req, res) => sendStreams(req, res, req.query.animeId || req.query.anime_id));
+app.get('/v1/episodes/:id/stream', (req, res) => sendStreams(req, res, req.query.animeId || req.query.anime_id));
+
+app.use((_req, res) => res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Endpoint not found.' } }));
+app.use((error, _req, res, _next) => {
+  console.error('[koni-nime-api]', error?.message || error);
+  if (!res.headersSent) res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'Unexpected API error.' } });
+});
+
+export { app };
+if (process.env.NODE_ENV !== 'test') app.listen(PORT, '0.0.0.0', () => console.log('Koni-Nime API listening on 0.0.0.0:' + PORT));
